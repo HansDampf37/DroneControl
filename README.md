@@ -18,7 +18,7 @@ Ein Gymnasium-kompatibles Reinforcement Learning Environment für Quadcopter-Ste
 - **Realistische Physik**: Vereinfachte Quadcopter-Physik mit 4 unabhängigen Motoren in X-Konfiguration
 - **Dynamischer Wind**: Ornstein-Uhlenbeck-Prozess für realistische Windänderungen
 - **Dense Reward**: `1/(1 + distance)` für effizientes Training
-- **2D-Visualisierung**: Top-Down-Ansicht mit matplotlib
+- **Optimierte 2-Ansichten-Visualisierung**: Draufsicht (XY) + Vorderansicht (XZ) wie technische Zeichnung
 - **Gymnasium-kompatibel**: Standard RL-Interface
 - **Crash-Detektion**: Automatische Episode-Beendigung bei Absturz
 
@@ -98,7 +98,7 @@ env.close()
 
 ### Reward Function
 ```python
-reward = 1.0 / (1.0 + distance_to_target)
+reward = ((max_distance_to_target - distance_to_target) / max_distance_to_target) ** 2
 ```
 - Wertebereich: (0, 1]
 - Dense Reward für besseres Training
