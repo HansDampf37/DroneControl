@@ -53,7 +53,7 @@ def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../mode
 
     # Environment-Konfiguration
     env_config = {
-        "max_steps": 500,
+        "max_steps": 100,
         "render_mode": None,
         "enable_crash_detection": True,
     }
@@ -74,7 +74,7 @@ def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../mode
                 clip_param=0.2,
                 entropy_coeff=0.01,
             )
-            .env_runners(num_env_runners=2, num_envs_per_env_runner=1)
+            .env_runners(num_env_runners=15, num_envs_per_env_runner=1)
             .resources(num_gpus=0)
             .evaluation(
                 evaluation_interval=10,
@@ -313,7 +313,7 @@ if __name__ == "__main__":
                         help='Modus: train oder eval')
     parser.add_argument('--algorithm', type=str, default='PPO', choices=['PPO', 'SAC', 'APPO'],
                         help='RL-Algorithmus')
-    parser.add_argument('--timesteps', type=int, default=100000,
+    parser.add_argument('--timesteps', type=int, default=1000000,
                         help='Anzahl der Trainings-Timesteps')
     parser.add_argument('--model-path', type=str, default='models/drone_model',
                         help='Pfad zum Modell (zum Speichern/Laden)')
