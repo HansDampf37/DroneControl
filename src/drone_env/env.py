@@ -18,7 +18,7 @@ class DroneEnv(gym.Env):
                          Winkelgeschwindigkeit, Windvektor
     - Physik: Vereinfacht, Kräfte senkrecht zur Rotorebene, skalieren mit Motor-Power
     - Wind: Dynamisch, ändert sich über Zeit (Ornstein-Uhlenbeck-Prozess)
-    - Reward: Dense, 1/(1 + distance_to_target)
+    - Reward: Dense, ((max_distance-distance)/max-distance) ** 2
     - Termination: Nach fixen max_steps
     """
 
@@ -375,6 +375,7 @@ class DroneEnv(gym.Env):
     def _compute_reward(self) -> float:
         """Berechnet den Dense Reward: 1/(1 + distance_to_target)."""
         distance = np.linalg.norm(self.target_position - self.position)
+        distance = np.clip(distance, 0, self.max_dist_to_target)
         margin = (self.max_dist_to_target - distance) / self.max_dist_to_target
         return float(margin ** 2)
 
