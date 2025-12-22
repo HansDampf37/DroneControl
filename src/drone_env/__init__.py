@@ -1,6 +1,7 @@
 """Drohnen-RL Environment Package."""
 from .env import DroneEnv
 from .renderer import DroneEnvRenderer
+from .drone import Drone
 
 
 class RLlibDroneEnv(DroneEnv):
@@ -29,7 +30,7 @@ class RLlibDroneEnv(DroneEnv):
         wind_strength_range = config.get("wind_strength_range", (0.0, 5.0))
         render_mode = config.get("render_mode", None)
         enable_crash_detection = config.get("enable_crash_detection", True)
-        crash_z_threshold = config.get("crash_z_threshold", -5.0)
+        crash_z_vel_threshold = config.get("crash_z_vel_threshold", -20.0)
         crash_tilt_threshold = config.get("crash_tilt_threshold", 80.0)
 
         # Rufe Parent-Konstruktor mit benannten Parametern auf
@@ -40,11 +41,11 @@ class RLlibDroneEnv(DroneEnv):
             wind_strength_range=wind_strength_range,
             render_mode=render_mode,
             enable_crash_detection=enable_crash_detection,
-            crash_z_threshold=crash_z_threshold,
+            crash_z_vel_threshold=crash_z_vel_threshold,
             crash_tilt_threshold=crash_tilt_threshold,
         )
 
 
-__all__ = ['DroneEnv', 'RLlibDroneEnv']
+__all__ = ['DroneEnv', 'RLlibDroneEnv', 'DroneEnvRenderer', 'Drone']
 __version__ = '0.1.0'
 
