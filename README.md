@@ -104,8 +104,10 @@ reward = 1.0 / (1.0 + distance_to_target)
 - Dense Reward für besseres Training
 
 ### Termination
-- Episode endet nach festen `max_steps` (Standard: 1000)
-- Keine Crash-Detektion
+- **Truncated**: Nach festen `max_steps` (Standard: 1000)
+- **Terminated**: Bei Crash (optional, siehe Crash-Detektion)
+  - Z-Coordinate < -5.0m (unter Boden)
+  - Extreme Neigung (>80° Roll oder Pitch)
 
 ## Physik-Modell
 
@@ -137,22 +139,22 @@ env = DroneEnv(
 
 ## RL-Training
 
-### Beispiel mit Stable-Baselines3
+### Beispiel mit Ray RLlib
 ```bash
 # Installation
-pip install stable-baselines3[extra]
+pip install ray[rllib] torch
 
 # Training
 python examples/training.py --mode train --algorithm PPO --timesteps 100000
 
 # Evaluation
-python examples/training.py --mode eval --model-path models/drone_model
+python examples/training.py --mode eval --algorithm PPO --model-path models/drone_model
 ```
 
 ### Empfohlene Algorithmen
-- **PPO**: Stabil, gut für Einstieg
-- **SAC**: Sehr gute Performance bei kontinuierlichen Actions
-- **TD3**: Alternative zu SAC
+- **PPO**: Stabil, gut für Einstieg, On-Policy
+- **SAC**: Sehr gute Performance bei kontinuierlichen Actions, Off-Policy
+- **APPO**: Asynchronous PPO, gut für verteiltes Training
 
 ### Baseline Performance
 - **Hover Agent** (alle Motoren ~25%): Reward ~0.05-0.10

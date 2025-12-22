@@ -3,3 +3,6 @@ numpy>=1.24.0
 matplotlib>=3.7.0
 scipy>=1.10.0
 
+# Optional: Für RL-Training mit Ray RLlib
+# ray[rllib]>=2.7.0
+# torch>=2.0.0
