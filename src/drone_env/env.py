@@ -353,32 +353,82 @@ class DroneEnv(gym.Env):
         self.ax.set_ylabel('Y (m)', fontsize=11)
         self.ax.set_title(f'Drohnen-RL Environment - Step: {self.step_count}', fontsize=13, fontweight='bold')
 
-        # Drohne (echte Position)
+        # Drohne (echte Position) - Zentrum
         drone_circle = Circle(
             (self.position[0], self.position[1]),
-            0.6,
+            0.3,
             color='#0066cc',
-            alpha=0.8,
+            alpha=0.9,
             zorder=5,
             label='Drohne'
         )
         self.ax.add_patch(drone_circle)
 
-        # Drohnen-Orientierung (Yaw) - deutlicherer Pfeil
-        yaw = self.orientation[2]
-        arrow_length = 1.8
-        dx = arrow_length * np.cos(yaw)
-        dy = arrow_length * np.sin(yaw)
-        self.ax.arrow(
-            self.position[0], self.position[1],
-            dx, dy,
-            head_width=0.4,
-            head_length=0.4,
-            fc='#003366',
-            ec='#003366',
-            linewidth=2,
-            zorder=6
-        )
+        # Rotations-Matrix für aktuelle Orientierung (Roll, Pitch, Yaw)
+        R = self._get_rotation_matrix(self.orientation)
+
+        # 4 Rotoren in X-Konfiguration zeichnen
+        # Rotor-Positionen im Body-Frame (vor Rotation)
+        # self.rotor_positions enthält bereits die X-Konfiguration
+        rotor_colors = ['#ff6666', '#ff6666', '#66ff66', '#66ff66']  # Rot: CW, Grün: CCW
+        rotor_scale = 3.0  # Skalierung NUR für Visualisierung (Physik unverändert)
+
+        for i, (rotor_pos_body, color) in enumerate(zip(self.rotor_positions, rotor_colors)):
+            # Transformiere Rotor-Position von Body-Frame zu World-Frame
+            rotor_pos_world = R @ rotor_pos_body
+
+            # Skaliere für bessere Visualisierung (größerer Abstand)
+            rotor_pos_world_scaled = rotor_pos_world * rotor_scale
+
+            # Projiziere auf XY-Ebene (addiere Drohnen-Position)
+            rotor_x = self.position[0] + rotor_pos_world_scaled[0]
+            rotor_y = self.position[1] + rotor_pos_world_scaled[1]
+            # rotor_z würde self.position[2] + rotor_pos_world_scaled[2] sein (nicht gezeichnet)
+
+            # Verbindungslinie vom Zentrum zum Rotor (projiziert)
+            self.ax.plot(
+                [self.position[0], rotor_x],
+                [self.position[1], rotor_y],
+                color='#666666',
+                linewidth=2.5,
+                zorder=4,
+                alpha=0.8
+            )
+
+            # Rotor als Kreis
+            rotor_circle = Circle(
+                (rotor_x, rotor_y),
+                0.15,
+                color=color,
+                alpha=0.8,
+                zorder=6
+            )
+            self.ax.add_patch(rotor_circle)
+
+        # Neigungsrichtung der Drohne (Projektion der Normalen auf XY-Ebene)
+        normal_body = np.array([0, 0, 1])
+        normal_world = R @ normal_body
+
+        # Projektion auf XY-Ebene
+        tilt_x = normal_world[0]
+        tilt_y = normal_world[1]
+        tilt_magnitude = np.sqrt(tilt_x**2 + tilt_y**2)
+
+        # Zeichne Neigungspfeil (wenn Drohne geneigt ist)
+        if tilt_magnitude > 0.01:  # Nur wenn nennenswerte Neigung
+            tilt_scale = 1.5
+            self.ax.arrow(
+                self.position[0], self.position[1],
+                tilt_x * tilt_scale, tilt_y * tilt_scale,
+                head_width=0.3,
+                head_length=0.25,
+                fc='#ff9900',
+                ec='#ff9900',
+                linewidth=2.5,
+                zorder=7,
+                alpha=0.9,
+                label='Neigung'
+            )
 
         # Zielpunkt - größer und auffälliger
         target_circle = Circle(
@@ -437,11 +487,19 @@ class DroneEnv(gym.Env):
         velocity_mag = np.linalg.norm(self.velocity)
         wind_mag = np.linalg.norm(self.wind_vector)
 
+        # Konvertiere Winkel zu Grad
+        roll_deg = np.rad2deg(self.orientation[0])
+        pitch_deg = np.rad2deg(self.orientation[1])
+        yaw_deg = np.rad2deg(self.orientation[2])
+
         info_text = f'Step: {self.step_count}\n'
         info_text += f'Distanz: {distance:.2f}m\n'
         info_text += f'Höhe: {self.position[2]:.2f}m\n'
         info_text += f'Geschw.: {velocity_mag:.2f}m/s\n'
         info_text += f'Wind: {wind_mag:.2f}m/s\n'
+        info_text += f'Roll: {roll_deg:.1f}°\n'
+        info_text += f'Pitch: {pitch_deg:.1f}°\n'
+        info_text += f'Yaw: {yaw_deg:.1f}°\n'
         info_text += f'Reward: {self._compute_reward():.4f}'
 
         self.ax.text(
