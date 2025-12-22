@@ -20,6 +20,7 @@ Ein Gymnasium-kompatibles Reinforcement Learning Environment für Quadcopter-Ste
 - **Dense Reward**: `1/(1 + distance)` für effizientes Training
 - **2D-Visualisierung**: Top-Down-Ansicht mit matplotlib
 - **Gymnasium-kompatibel**: Standard RL-Interface
+- **Crash-Detektion**: Automatische Episode-Beendigung bei Absturz
 
 ## Schnellstart
 

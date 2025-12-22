@@ -31,6 +31,10 @@ class DroneEnv(gym.Env):
         target_change_interval: Optional[int] = None,  # Schritte bis Ziel sich ändert
         wind_strength_range: Tuple[float, float] = (0.0, 5.0),  # m/s
         render_mode: Optional[str] = None,
+        # Crash-Detektion Parameter
+        enable_crash_detection: bool = True,
+        crash_z_threshold: float = -5.0,  # Drohne unter dieser Höhe = Crash (m)
+        crash_tilt_threshold: float = 80.0,  # Roll/Pitch über diesem Winkel = Crash (Grad)
     ):
         super().__init__()
 
@@ -39,6 +43,11 @@ class DroneEnv(gym.Env):
         self.target_change_interval = target_change_interval
         self.wind_strength_range = wind_strength_range
         self.render_mode = render_mode
+
+        # Crash-Detektion
+        self.enable_crash_detection = enable_crash_detection
+        self.crash_z_threshold = crash_z_threshold
+        self.crash_tilt_threshold = np.deg2rad(crash_tilt_threshold)  # In Radiant konvertieren
 
         # Drohnen-Parameter (Quadcopter X-Konfiguration)
         self.mass = 1.0  # kg
@@ -173,10 +182,14 @@ class DroneEnv(gym.Env):
 
         # Termination
         self.step_count += 1
-        terminated = False
+        crashed = self._check_crash()
+        terminated = crashed  # Episode endet bei Crash
         truncated = self.step_count >= self.max_steps
+        if crashed:
+            reward -= 10
 
         info = self._get_info()
+        info['crashed'] = crashed  # Füge Crash-Info hinzu
 
         return observation, reward, terminated, truncated, info
 
@@ -315,6 +328,31 @@ class DroneEnv(gym.Env):
         distance = np.linalg.norm(self.target_position - self.position)
         reward = 1.0 / (1.0 + distance)
         return float(reward)
+
+    def _check_crash(self) -> bool:
+        """
+        Prüft ob die Drohne abgestürzt ist.
+
+        Verwendet zwei Kriterien:
+        1. Low z-coordinate (primär, am effizientesten)
+        2. Extreme tilt (sekundär, für unkontrollierte Drohne)
+
+        Returns:
+            bool: True wenn Crash detektiert, sonst False
+        """
+        if not self.enable_crash_detection:
+            return False
+
+        # Primär: Zu niedrige Höhe (effizienteste Methode)
+        if self.position[2] < self.crash_z_threshold:
+            return True
+
+        # Sekundär: Extreme Neigung (komplett außer Kontrolle)
+        roll, pitch, _ = self.orientation
+        if abs(roll) > self.crash_tilt_threshold or abs(pitch) > self.crash_tilt_threshold:
+            return True
+
+        return False
 
     def _get_info(self) -> Dict[str, Any]:
         """Zusätzliche Informationen."""
