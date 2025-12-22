@@ -54,6 +54,10 @@ class DroneEnv(gym.Env):
         self.arm_length = 0.25  # m (Distanz von Center zu Rotor)
         self.inertia = np.array([0.01, 0.01, 0.02])  # kg*m^2 (Ix, Iy, Iz)
 
+        # Pendel-Stabilisierung (Massenschwerpunkt unter Rotoren)
+        self.center_of_mass_offset = 0.1  # m unterhalb der Rotoren
+        self.pendulum_damping = 0.5  # Dämpfungsfaktor für Pendelbewegung
+
         # Rotor-Parameter
         self.thrust_coeff = 10.0  # Thrust = thrust_coeff * motor_power
         self.torque_coeff = 0.1  # Torque = torque_coeff * motor_power
@@ -229,8 +233,21 @@ class DroneEnv(gym.Env):
         # T_drag = -k * omega
         angular_drag_torque = -self.angular_drag_coeff * self.angular_velocity
 
-        # 8. Winkelbeschleunigung
-        angular_acceleration = (torque + angular_drag_torque) / self.inertia
+        # 7.6. Pendel-Stabilisierung (Massenschwerpunkt unter Rotoren)
+        # Rückstellmoment proportional zu Roll/Pitch
+        roll, pitch, _ = self.orientation
+        pendulum_torque = np.array([
+            -self.mass * self.gravity * self.center_of_mass_offset * np.sin(roll),
+            -self.mass * self.gravity * self.center_of_mass_offset * np.sin(pitch),
+            0.0  # Kein Yaw-Effekt
+        ], dtype=np.float32)
+
+        # Dämpfung der Pendelbewegung
+        pendulum_damping_torque = -self.pendulum_damping * self.angular_velocity[:2]
+        pendulum_torque[:2] += pendulum_damping_torque
+
+        # 8. Winkelbeschleunigung (mit Pendel-Effekt)
+        angular_acceleration = (torque + angular_drag_torque + pendulum_torque) / self.inertia
 
         # 9. Integration (Euler)
         self.velocity += linear_acceleration * self.dt
