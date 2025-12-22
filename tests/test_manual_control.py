@@ -35,7 +35,6 @@ class ManualDroneController:
     """Interaktiver Controller für manuelle Drohnen-Steuerung."""
 
     def __init__(self):
-        # Environment ohne Gravitation
         # dt=0.1 entspricht 10 FPS (1/0.01 = 100 Hz)
         self.dt = 0.1  # Zeitschritt in Sekunden
 
@@ -45,9 +44,6 @@ class ManualDroneController:
             enable_crash_detection=False,  # Kein Crash während Test
             dt=self.dt,
         )
-
-        # Deaktiviere Gravitation im Environment
-        self.env.gravity = 0.0
 
         # Motor-States
         self.motor_powers = np.array([0.0, 0.0, 0.0, 0.0])
@@ -229,12 +225,18 @@ class ManualDroneController:
                     roll_deg = np.rad2deg(self.env.orientation[0])
                     pitch_deg = np.rad2deg(self.env.orientation[1])
                     yaw_deg = np.rad2deg(self.env.orientation[2])
+                    angular_vel = np.rad2deg(self.env.angular_velocity)
+                    vel = self.env.velocity
+
+                    print(self.obs)
 
                     print(f"\nStatus (Step {step}):")
                     print(f"  Position: [{pos[0]:6.2f}, {pos[1]:6.2f}, {pos[2]:6.2f}]")
                     print(f"  Roll:  {roll_deg:6.1f}°")
                     print(f"  Pitch: {pitch_deg:6.1f}°")
                     print(f"  Yaw:   {yaw_deg:6.1f}°")
+                    print(f"  Velocity: [{vel[0]:6.2f}, {vel[1]:6.2f}, {vel[2]:6.2f}]m/s")
+                    print(f"  Angular Velocity: [{angular_vel[0]:6.2f}, {angular_vel[1]:6.2f}, {angular_vel[2]:6.2f}]deg/s")
                     print(f"  Motors: [{self.motor_powers[0]:.2f}, {self.motor_powers[1]:.2f}, "
                           f"{self.motor_powers[2]:.2f}, {self.motor_powers[3]:.2f}]")
                     print(f"  FPS: {self.actual_fps:.1f} / {self.target_fps:.0f} (Ziel)")
