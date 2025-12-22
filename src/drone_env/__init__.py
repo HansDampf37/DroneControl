@@ -1,5 +1,6 @@
 """Drohnen-RL Environment Package."""
 from .env import DroneEnv
+from .renderer import DroneEnvRenderer
 
 
 class RLlibDroneEnv(DroneEnv):
