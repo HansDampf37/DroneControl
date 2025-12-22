@@ -337,8 +337,8 @@ class DroneEnv(gym.Env):
     def _compute_reward(self) -> float:
         """Berechnet den Dense Reward: 1/(1 + distance_to_target)."""
         distance = np.linalg.norm(self.target_position - self.position)
-        reward = (self.max_dist_to_target - distance) / self.max_dist_to_target
-        return float(reward)
+        margin = (self.max_dist_to_target - distance) / self.max_dist_to_target
+        return float(margin ** 2)
 
     def _check_crash(self) -> bool:
         """
