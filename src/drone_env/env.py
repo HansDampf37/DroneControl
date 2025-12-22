@@ -418,7 +418,7 @@ class DroneEnv(gym.Env):
         }
 
     def render(self):
-        """Visualisierung (2D Top-Down-View)."""
+        """Visualisierung (2D Top-Down-View und Front-View wie technische Zeichnung)."""
         if self.render_mode is None:
             return
 
@@ -428,24 +428,44 @@ class DroneEnv(gym.Env):
             if self.render_mode == "human":
                 plt.ion()
 
-            self.fig, self.ax = plt.subplots(1, 1, figsize=(10, 10))
+            # 2 Subplots: Oben Draufsicht (XY), Unten Vorderansicht (XZ)
+            self.fig, (self.ax_top, self.ax_front) = plt.subplots(2, 1, figsize=(10, 14))
             self.fig.set_facecolor('white')
+            self.fig.subplots_adjust(hspace=0.3)
+        else:
+            # Axes existieren bereits, weise sie zu falls nötig
+            self.ax_top = self.fig.axes[0]
+            self.ax_front = self.fig.axes[1]
 
-        # Clear und neu zeichnen
-        self.ax.clear()
-        self.ax.set_facecolor('#f0f0f0')
+        # Clear beide Ansichten
+        self.ax_top.clear()
+        self.ax_front.clear()
+        self.ax_top.set_facecolor('#f0f0f0')
+        self.ax_front.set_facecolor('#f0f0f0')
 
-        # Achsen-Setup
-        self.ax.set_xlim(-30, 30)
-        self.ax.set_ylim(-30, 30)
-        self.ax.set_aspect('equal')
-        self.ax.grid(True, alpha=0.4, linestyle='--', linewidth=0.5)
-        self.ax.set_xlabel('X (m)', fontsize=11)
-        self.ax.set_ylabel('Y (m)', fontsize=11)
-        self.ax.set_title(f'Drohnen-RL Environment - Step: {self.step_count}', fontsize=13, fontweight='bold')
+        # ========== TOP VIEW (Draufsicht XY) ==========
+        self.ax_top.set_xlim(-30, 30)
+        self.ax_top.set_ylim(-30, 30)
+        self.ax_top.set_aspect('equal')
+        self.ax_top.grid(True, alpha=0.4, linestyle='--', linewidth=0.5)
+        self.ax_top.set_xlabel('X (m)', fontsize=11)
+        self.ax_top.set_ylabel('Y (m)', fontsize=11)
+        self.ax_top.set_title(f'Draufsicht (Top View) - Step: {self.step_count}', fontsize=12, fontweight='bold')
 
-        # Drohne (echte Position) - Zentrum
-        drone_circle = Circle(
+        # ========== FRONT VIEW (Vorderansicht XZ) ==========
+        self.ax_front.set_xlim(-30, 30)
+        self.ax_front.set_ylim(-30, 30)
+        self.ax_front.set_aspect('equal')
+        self.ax_front.grid(True, alpha=0.4, linestyle='--', linewidth=0.5)
+        self.ax_front.set_xlabel('X (m)', fontsize=11)
+        self.ax_front.set_ylabel('Z (Höhe) (m)', fontsize=11)
+        self.ax_front.set_title('Vorderansicht (Front View)', fontsize=12, fontweight='bold')
+
+        # Rotations-Matrix für aktuelle Orientierung
+        R = self._get_rotation_matrix(self.orientation)
+
+        # --- TOP VIEW: Drohne (XY-Ebene) ---
+        drone_circle_top = Circle(
             (self.position[0], self.position[1]),
             0.3,
             color='#0066cc',
@@ -453,31 +473,35 @@ class DroneEnv(gym.Env):
             zorder=5,
             label='Drohne'
         )
-        self.ax.add_patch(drone_circle)
+        self.ax_top.add_patch(drone_circle_top)
 
-        # Rotations-Matrix für aktuelle Orientierung (Roll, Pitch, Yaw)
-        R = self._get_rotation_matrix(self.orientation)
+        # --- FRONT VIEW: Drohne (XZ-Ebene) ---
+        drone_circle_front = Circle(
+            (self.position[0], self.position[2]),
+            0.3,
+            color='#0066cc',
+            alpha=0.9,
+            zorder=5,
+            label='Drohne'
+        )
+        self.ax_front.add_patch(drone_circle_front)
 
-        # 4 Rotoren in X-Konfiguration zeichnen
-        # Rotor-Positionen im Body-Frame (vor Rotation)
-        # self.rotor_positions enthält bereits die X-Konfiguration
+        # ========== ROTOREN ZEICHNEN ==========
         rotor_colors = ['#ff6666', '#ff6666', '#66ff66', '#66ff66']  # Rot: CW, Grün: CCW
-        rotor_scale = 3.0  # Skalierung NUR für Visualisierung (Physik unverändert)
+        rotor_scale = 3.0  # Skalierung für bessere Visualisierung
 
         for i, (rotor_pos_body, color) in enumerate(zip(self.rotor_positions, rotor_colors)):
             # Transformiere Rotor-Position von Body-Frame zu World-Frame
             rotor_pos_world = R @ rotor_pos_body
-
-            # Skaliere für bessere Visualisierung (größerer Abstand)
             rotor_pos_world_scaled = rotor_pos_world * rotor_scale
 
-            # Projiziere auf XY-Ebene (addiere Drohnen-Position)
+            # World-Koordinaten der Rotoren
             rotor_x = self.position[0] + rotor_pos_world_scaled[0]
             rotor_y = self.position[1] + rotor_pos_world_scaled[1]
-            # rotor_z würde self.position[2] + rotor_pos_world_scaled[2] sein (nicht gezeichnet)
+            rotor_z = self.position[2] + rotor_pos_world_scaled[2]
 
-            # Verbindungslinie vom Zentrum zum Rotor (projiziert)
-            self.ax.plot(
+            # --- TOP VIEW: Rotoren in XY-Ebene ---
+            self.ax_top.plot(
                 [self.position[0], rotor_x],
                 [self.position[1], rotor_y],
                 color='#666666',
@@ -485,30 +509,46 @@ class DroneEnv(gym.Env):
                 zorder=4,
                 alpha=0.8
             )
-
-            # Rotor als Kreis
-            rotor_circle = Circle(
+            rotor_circle_top = Circle(
                 (rotor_x, rotor_y),
                 0.15,
                 color=color,
                 alpha=0.8,
                 zorder=6
             )
-            self.ax.add_patch(rotor_circle)
+            self.ax_top.add_patch(rotor_circle_top)
 
-        # Neigungsrichtung der Drohne (Projektion der Normalen auf XY-Ebene)
+            # --- FRONT VIEW: Rotoren in XZ-Ebene ---
+            self.ax_front.plot(
+                [self.position[0], rotor_x],
+                [self.position[2], rotor_z],
+                color='#666666',
+                linewidth=2.5,
+                zorder=4,
+                alpha=0.8
+            )
+            rotor_circle_front = Circle(
+                (rotor_x, rotor_z),
+                0.15,
+                color=color,
+                alpha=0.8,
+                zorder=6
+            )
+            self.ax_front.add_patch(rotor_circle_front)
+
+        # ========== NEIGUNG/ORIENTIERUNG ==========
+        # Normale der Drohne (zeigt nach "oben" im Body-Frame)
         normal_body = np.array([0, 0, 1])
         normal_world = R @ normal_body
 
-        # Projektion auf XY-Ebene
+        # --- TOP VIEW: Projektion der Neigung auf XY-Ebene ---
         tilt_x = normal_world[0]
         tilt_y = normal_world[1]
         tilt_magnitude = np.sqrt(tilt_x**2 + tilt_y**2)
 
-        # Zeichne Neigungspfeil (wenn Drohne geneigt ist)
-        if tilt_magnitude > 0.01:  # Nur wenn nennenswerte Neigung
+        if tilt_magnitude > 0.01:
             tilt_scale = 1.5
-            self.ax.arrow(
+            self.ax_top.arrow(
                 self.position[0], self.position[1],
                 tilt_x * tilt_scale, tilt_y * tilt_scale,
                 head_width=0.3,
@@ -521,8 +561,28 @@ class DroneEnv(gym.Env):
                 label='Neigung'
             )
 
-        # Zielpunkt - größer und auffälliger
-        target_circle = Circle(
+        # --- FRONT VIEW: Neigung in XZ-Ebene ---
+        tilt_x_front = normal_world[0]
+        tilt_z_front = normal_world[2]
+
+        if abs(tilt_x_front) > 0.01 or abs(tilt_z_front - 1.0) > 0.01:
+            tilt_scale_front = 1.5
+            self.ax_front.arrow(
+                self.position[0], self.position[2],
+                tilt_x_front * tilt_scale_front, tilt_z_front * tilt_scale_front,
+                head_width=0.3,
+                head_length=0.25,
+                fc='#ff9900',
+                ec='#ff9900',
+                linewidth=2.5,
+                zorder=7,
+                alpha=0.9,
+                label='Neigung'
+            )
+
+        # ========== ZIELPUNKT ==========
+        # --- TOP VIEW: Ziel in XY-Ebene ---
+        target_circle_top = Circle(
             (self.target_position[0], self.target_position[1]),
             1.0,
             color='#00cc00',
@@ -530,23 +590,23 @@ class DroneEnv(gym.Env):
             zorder=4,
             label='Ziel'
         )
-        self.ax.add_patch(target_circle)
+        self.ax_top.add_patch(target_circle_top)
 
-        # Ziel-Markierung (Kreuz)
+        # Ziel-Kreuz (Top View)
         cross_size = 0.5
-        self.ax.plot(
+        self.ax_top.plot(
             [self.target_position[0] - cross_size, self.target_position[0] + cross_size],
             [self.target_position[1], self.target_position[1]],
             'g-', linewidth=2, zorder=5
         )
-        self.ax.plot(
+        self.ax_top.plot(
             [self.target_position[0], self.target_position[0]],
             [self.target_position[1] - cross_size, self.target_position[1] + cross_size],
             'g-', linewidth=2, zorder=5
         )
 
-        # Verbindungslinie
-        self.ax.plot(
+        # Verbindungslinie zur Drohne (Top View)
+        self.ax_top.plot(
             [self.position[0], self.target_position[0]],
             [self.position[1], self.target_position[1]],
             'k--',
@@ -555,12 +615,45 @@ class DroneEnv(gym.Env):
             zorder=1
         )
 
-        # Wind-Vektor - als deutlicher Pfeil
+        # --- FRONT VIEW: Ziel in XZ-Ebene ---
+        target_circle_front = Circle(
+            (self.target_position[0], self.target_position[2]),
+            1.0,
+            color='#00cc00',
+            alpha=0.6,
+            zorder=4,
+            label='Ziel'
+        )
+        self.ax_front.add_patch(target_circle_front)
+
+        # Ziel-Kreuz (Front View)
+        self.ax_front.plot(
+            [self.target_position[0] - cross_size, self.target_position[0] + cross_size],
+            [self.target_position[2], self.target_position[2]],
+            'g-', linewidth=2, zorder=5
+        )
+        self.ax_front.plot(
+            [self.target_position[0], self.target_position[0]],
+            [self.target_position[2] - cross_size, self.target_position[2] + cross_size],
+            'g-', linewidth=2, zorder=5
+        )
+
+        # Verbindungslinie zur Drohne (Front View)
+        self.ax_front.plot(
+            [self.position[0], self.target_position[0]],
+            [self.position[2], self.target_position[2]],
+            'k--',
+            alpha=0.4,
+            linewidth=1.5,
+            zorder=1
+        )
+
+        # ========== WIND-VEKTOR (nur Top View) ==========
         wind_scale = 3.0
         wind_x = self.wind_vector[0] * wind_scale
         wind_y = self.wind_vector[1] * wind_scale
         if np.linalg.norm([wind_x, wind_y]) > 0.1:  # Nur zeichnen wenn Wind spürbar
-            self.ax.arrow(
+            self.ax_top.arrow(
                 -25, 25,
                 wind_x, wind_y,
                 head_width=0.7,
@@ -573,7 +666,7 @@ class DroneEnv(gym.Env):
                 label='Wind'
             )
 
-        # Info-Box mit mehr Details
+        # ========== INFO-BOX ==========
         distance = np.linalg.norm(self.target_position - self.position)
         velocity_mag = np.linalg.norm(self.velocity)
         wind_mag = np.linalg.norm(self.wind_vector)
@@ -593,17 +686,19 @@ class DroneEnv(gym.Env):
         info_text += f'Yaw: {yaw_deg:.1f}°\n'
         info_text += f'Reward: {self._compute_reward():.4f}'
 
-        self.ax.text(
+        self.ax_top.text(
             0.02, 0.98,
             info_text,
-            transform=self.ax.transAxes,
+            transform=self.ax_top.transAxes,
             fontsize=10,
             verticalalignment='top',
             bbox=dict(boxstyle='round,pad=0.5', facecolor='yellow', alpha=0.7),
             family='monospace'
         )
 
-        self.ax.legend(loc='upper right', fontsize=10)
+        # Legenden
+        self.ax_top.legend(loc='upper right', fontsize=9)
+        self.ax_front.legend(loc='upper right', fontsize=9)
 
         # Rendering durchführen
         if self.render_mode == "human":
@@ -623,7 +718,8 @@ class DroneEnv(gym.Env):
         if self.fig is not None:
             plt.close(self.fig)
             self.fig = None
-            self.ax = None
+            self.ax_top = None
+            self.ax_front = None
         if self.render_mode == "human":
             plt.ioff()  # Interaktiven Modus beenden
 
