@@ -56,6 +56,7 @@ def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../mode
         "max_steps": 100,
         "render_mode": None,
         "enable_crash_detection": True,
+        "dt": 0.02
     }
 
     # Algorithmus-Konfiguration
@@ -73,6 +74,8 @@ def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../mode
                 lambda_=0.95,
                 clip_param=0.2,
                 entropy_coeff=0.01,
+                use_critic=True,
+                use_gae=True
             )
             .env_runners(num_env_runners=15, num_envs_per_env_runner=1)
             .resources(num_gpus=0)

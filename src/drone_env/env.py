@@ -33,7 +33,7 @@ class DroneEnv(gym.Env):
         render_mode: Optional[str] = None,
         # Crash-Detektion Parameter
         enable_crash_detection: bool = True,
-        crash_z_threshold: float = -5.0,  # Drohne unter dieser Höhe = Crash (m)
+        crash_z_vel_threshold: float = -20.0,  # Drohne fällt schneller als 10 m/s = Crash
         crash_tilt_threshold: float = 80.0,  # Roll/Pitch über diesem Winkel = Crash (Grad)
     ):
         super().__init__()
@@ -46,7 +46,7 @@ class DroneEnv(gym.Env):
 
         # Crash-Detektion
         self.enable_crash_detection = enable_crash_detection
-        self.crash_z_threshold = crash_z_threshold
+        self.crash_z_vel_threshold = crash_z_vel_threshold
         self.crash_tilt_threshold = np.deg2rad(crash_tilt_threshold)  # In Radiant konvertieren
 
         # Drohnen-Parameter (Quadcopter X-Konfiguration)
@@ -201,8 +201,6 @@ class DroneEnv(gym.Env):
         crashed = self._check_crash()
         terminated = crashed  # Episode endet bei Crash
         truncated = self.step_count >= self.max_steps
-        if crashed:
-            reward -= 10
 
         info = self._get_info()
         info['crashed'] = crashed  # Füge Crash-Info hinzu
@@ -350,7 +348,7 @@ class DroneEnv(gym.Env):
     def _generate_random_target(self) -> np.ndarray:
         """Generiert einen zufälligen Zielpunkt."""
         # Zufällige Position in sphärischen Koordinaten
-        distance = np.random.uniform(5.0, 20.0)
+        distance = np.random.uniform(5.0, self.max_dist_to_target)
         azimuth = np.random.uniform(0, 2 * np.pi)
         elevation = np.random.uniform(-np.pi / 4, np.pi / 4)
 
@@ -393,8 +391,8 @@ class DroneEnv(gym.Env):
         if not self.enable_crash_detection:
             return False
 
-        # Primär: Zu niedrige Höhe (effizienteste Methode)
-        if self.position[2] < self.crash_z_threshold:
+        # Primär: Fällt zu schnell
+        if self.velocity[2] < self.crash_z_vel_threshold:
             return True
 
         # Sekundär: Extreme Neigung (komplett außer Kontrolle)
