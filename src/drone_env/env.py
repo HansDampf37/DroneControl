@@ -86,6 +86,7 @@ class DroneEnv(gym.Env):
             dtype=np.float32
         )
 
+        space_side_length = 50
         # Observation Space
         # [0:3]   - Position relativ zum Ziel (x, y, z)
         # [3:6]   - Lineare Geschwindigkeit (vx, vy, vz)
@@ -93,15 +94,15 @@ class DroneEnv(gym.Env):
         # [9:12]  - Winkelgeschwindigkeit (wx, wy, wz)
         # [12:15] - Windvektor absolut (wx, wy, wz)
         obs_low = np.array(
-            [-50.0] * 3 +  # Position relativ
+            [-space_side_length] * 3 +  # Position relativ
             [-20.0] * 3 +  # Geschwindigkeit
-            [-np.pi] * 3 + # Euler-Winkel
+            [-np.pi] * 3 +  # Euler-Winkel
             [-10.0] * 3 +  # Winkelgeschwindigkeit
             [-10.0] * 3,   # Wind
             dtype=np.float32
         )
         obs_high = np.array(
-            [50.0] * 3 +
+            [space_side_length] * 3 +
             [20.0] * 3 +
             [np.pi] * 3 +
             [10.0] * 3 +
@@ -113,6 +114,8 @@ class DroneEnv(gym.Env):
             high=obs_high,
             dtype=np.float32
         )
+
+        self.max_dist_to_target = np.sqrt(3 * space_side_length ** 2)
 
         # State-Variablen
         self.position = np.zeros(3, dtype=np.float32)  # Immer [0, 0, 0] in Beobachtung
@@ -326,7 +329,7 @@ class DroneEnv(gym.Env):
     def _compute_reward(self) -> float:
         """Berechnet den Dense Reward: 1/(1 + distance_to_target)."""
         distance = np.linalg.norm(self.target_position - self.position)
-        reward = 1.0 / (1.0 + distance)
+        reward = (self.max_dist_to_target - distance) / self.max_dist_to_target
         return float(reward)
 
     def _check_crash(self) -> bool:
@@ -350,6 +353,11 @@ class DroneEnv(gym.Env):
         # Sekundär: Extreme Neigung (komplett außer Kontrolle)
         roll, pitch, _ = self.orientation
         if abs(roll) > self.crash_tilt_threshold or abs(pitch) > self.crash_tilt_threshold:
+            return True
+
+        # Tertiär: Entfernung vom Ziel zu hoch
+        distance = np.linalg.norm(self.target_position - self.position)
+        if distance > self.max_dist_to_target:
             return True
 
         return False
