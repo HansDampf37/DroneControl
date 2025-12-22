@@ -55,7 +55,7 @@ class DroneEnv(gym.Env):
         self.inertia = np.array([0.01, 0.01, 0.02])  # kg*m^2 (Ix, Iy, Iz)
 
         # Pendel-Stabilisierung (Massenschwerpunkt unter Rotoren)
-        self.center_of_mass_offset = 0.1  # m unterhalb der Rotoren
+        self.center_of_mass_offset = 0.03  # m unterhalb der Rotoren
         self.pendulum_damping = 0.5  # Dämpfungsfaktor für Pendelbewegung
 
         # Rotor-Parameter
@@ -64,7 +64,7 @@ class DroneEnv(gym.Env):
         self.gravity = 9.81  # m/s^2
 
         # Luftwiderstand (Drag)
-        self.linear_drag_coeff = 0.1  # Dämpfung für lineare Geschwindigkeit
+        self.linear_drag_coeff = 0.01 # Dämpfung für lineare Geschwindigkeit
         self.angular_drag_coeff = 0.05  # Dämpfung für Winkelgeschwindigkeit
 
         # Rotor-Positionen in X-Konfiguration (relativ zu Drohnen-Center)
@@ -95,6 +95,9 @@ class DroneEnv(gym.Env):
         )
 
         space_side_length = 50
+        self.max_angular_velocity_component = 10
+        self.max_velocity_component = 40
+        self.max_wind_velocity_component = 10
         # Observation Space
         # [0:3]   - Position relativ zum Ziel (x, y, z)
         # [3:6]   - Lineare Geschwindigkeit (vx, vy, vz)
@@ -102,19 +105,21 @@ class DroneEnv(gym.Env):
         # [9:12]  - Winkelgeschwindigkeit (wx, wy, wz)
         # [12:15] - Windvektor absolut (wx, wy, wz)
         obs_low = np.array(
-            [-space_side_length] * 3 +  # Position relativ
-            [-20.0] * 3 +  # Geschwindigkeit
+            [-space_side_length] * 3 +  # Position
+            [-space_side_length] * 3 +  # Ziel position
+            [-self.max_velocity_component] * 3 +  # Geschwindigkeit
             [-np.pi] * 3 +  # Euler-Winkel
-            [-10.0] * 3 +  # Winkelgeschwindigkeit
-            [-10.0] * 3,   # Wind
+            [-self.max_angular_velocity_component] * 3,  # Winkelgeschwindigkeit
+           # [-self.max_wind_velocity] * 3,   # Wind
             dtype=np.float32
         )
         obs_high = np.array(
             [space_side_length] * 3 +
-            [20.0] * 3 +
-            [np.pi] * 3 +
-            [10.0] * 3 +
-            [10.0] * 3,
+            [space_side_length] * 3 +  # Ziel position
+            [self.max_velocity_component] * 3 +  # Geschwindigkeit
+            [np.pi] * 3 +  # Euler-Winkel
+            [self.max_angular_velocity_component] * 3,  # Winkelgeschwindigkeit
+            # [-self.max_wind_velocity] * 3,   # Wind
             dtype=np.float32
         )
         self.observation_space = spaces.Box(
@@ -156,14 +161,14 @@ class DroneEnv(gym.Env):
         self.target_position = self._generate_random_target()
 
         # Zufälliger initialer Wind
-        wind_strength = np.random.uniform(*self.wind_strength_range)
-        wind_direction = np.random.uniform(0, 2 * np.pi)
-        wind_elevation = np.random.uniform(-np.pi / 6, np.pi / 6)  # Meist horizontal
-        self.wind_vector = np.array([
-            wind_strength * np.cos(wind_elevation) * np.cos(wind_direction),
-            wind_strength * np.cos(wind_elevation) * np.sin(wind_direction),
-            wind_strength * np.sin(wind_elevation)
-        ], dtype=np.float32)
+        # wind_strength = np.random.uniform(*self.wind_strength_range)
+        # wind_direction = np.random.uniform(0, 2 * np.pi)
+        # wind_elevation = np.random.uniform(-np.pi / 6, np.pi / 6)  # Meist horizontal
+        # self.wind_vector = np.array([
+        #     wind_strength * np.cos(wind_elevation) * np.cos(wind_direction),
+        #     wind_strength * np.cos(wind_elevation) * np.sin(wind_direction),
+        #     wind_strength * np.sin(wind_elevation)
+        # ], dtype=np.float32)
 
         self.step_count = 0
 
@@ -177,7 +182,7 @@ class DroneEnv(gym.Env):
         action = np.clip(action, 0.0, 1.0)
 
         # Wind-Update (Ornstein-Uhlenbeck-Prozess)
-        self._update_wind()
+        # self._update_wind()
 
         # Zielpunkt-Update (falls konfiguriert)
         if self.target_change_interval is not None:
@@ -206,54 +211,73 @@ class DroneEnv(gym.Env):
 
     def _update_physics(self, action: np.ndarray):
         """Aktualisiert die Physik der Drohne basierend auf Motor-Actions."""
-        # 1. Thrust-Kräfte berechnen (alle in Body-Frame, Z-Richtung nach oben)
-        thrusts = action * self.thrust_coeff  # Pro Motor
+        # 1. Rotation von Body-Frame zu World-Frame berechnen
+        R = self._get_rotation_matrix(self.orientation)
 
-        # 2. Gesamtkraft in Body-Frame (alle Kräfte zeigen nach oben in Z)
+        # 2. Thrust-Richtung im World-Frame (Z-Achse des Body-Frame zeigt nach oben)
+        thrust_direction_world = R @ np.array([0, 0, 1], dtype=np.float32)
+
+        # 3. Geschwindigkeit in Thrust-Richtung projizieren
+        velocity_in_thrust_direction = np.dot(self.velocity, thrust_direction_world)
+
+        # 4. Thrust-Modifikation basierend auf Geschwindigkeit in Thrust-Richtung
+        # Bei negativer Geschwindigkeit (Fallen): Faktor > 1.0 (mehr Thrust)
+        # Bei positiver Geschwindigkeit (Steigen): Faktor < 1.0 (weniger Thrust)
+        # Physik: Rotor-Effizienz steigt wenn Luft entgegenströmt, sinkt wenn Luft weggedrückt wird
+        max_speed_in_thrust_dir = 30.0  # m/s - maximale effektive Geschwindigkeit
+        speed_factor = max(0.0, 1.0 - (velocity_in_thrust_direction / max_speed_in_thrust_dir))
+
+        # 5. Thrust-Kräfte berechnen (mit Geschwindigkeits-Dämpfung)
+        thrusts = action * self.thrust_coeff * speed_factor
+
+        # 6. Gesamtkraft in Body-Frame (alle Kräfte zeigen nach oben in Z)
         total_thrust_body = np.array([0, 0, np.sum(thrusts)], dtype=np.float32)
 
-        # 3. Rotation von Body-Frame zu World-Frame
-        R = self._get_rotation_matrix(self.orientation)
+        # 7. Rotation zu World-Frame
         total_force_world = R @ total_thrust_body
 
-        # 4. Windkraft hinzufügen (World-Frame)
-        wind_force = self.linear_drag_coeff * (self.wind_vector - self.velocity)  # Vereinfachte Windkraft
-
-        # 5. Gravitation hinzufügen
+        # 8. Gravitation hinzufügen
         gravity_force = np.array([0, 0, -self.mass * self.gravity], dtype=np.float32)
 
-        # 6. Gesamtkraft und lineare Beschleunigung
-        total_force = total_force_world + wind_force + gravity_force
+        # 9. Luftwiderstand (basierend auf relativer Geschwindigkeit zur Luft/Wind)
+        # Relative Geschwindigkeit: v_rel = v_drone - v_wind
+        # Wenn die Drohne genau mit dem Wind fliegt, gibt es keinen Widerstand
+        relative_velocity = self.velocity - self.wind_vector
+        relative_speed = np.linalg.norm(relative_velocity)
+
+        if relative_speed > 0.01:
+            # Drag proportional zu v_rel² (quadratisch) in Richtung der Relativgeschwindigkeit
+            drag_force = -self.linear_drag_coeff * relative_speed * relative_velocity
+        else:
+            drag_force = np.zeros(3, dtype=np.float32)
+
+        # 10. Gesamtkraft und lineare Beschleunigung
+        total_force = total_force_world + gravity_force + drag_force
         linear_acceleration = total_force / self.mass
 
-        # 7. Drehmoment berechnen
+        # 11. Drehmoment berechnen (mit geschwindigkeitsangepassten Thrusts)
         torque = self._compute_torque(thrusts)
 
-        # 7.5. Winkel-Luftwiderstand hinzufügen (Dämpfung der Rotation)
-        # T_drag = -k * omega
-        angular_drag_torque = -self.angular_drag_coeff * self.angular_velocity
-
-        # 7.6. Pendel-Stabilisierung (Massenschwerpunkt unter Rotoren)
+        # 12. Pendel-Stabilisierung (Massenschwerpunkt unter Rotoren)
         # Rückstellmoment proportional zu Roll/Pitch
         roll, pitch, _ = self.orientation
-        pendulum_torque = np.array([
+        pendulum_torque = self.pendulum_damping * np.array([
             -self.mass * self.gravity * self.center_of_mass_offset * np.sin(roll),
             -self.mass * self.gravity * self.center_of_mass_offset * np.sin(pitch),
             0.0  # Kein Yaw-Effekt
         ], dtype=np.float32)
 
-        # Dämpfung der Pendelbewegung
-        pendulum_damping_torque = -self.pendulum_damping * self.angular_velocity[:2]
-        pendulum_torque[:2] += pendulum_damping_torque
+        # 13. Winkelbeschleunigung (mit Pendel-Effekt)
+        angular_acceleration = (torque + pendulum_torque) / self.inertia
 
-        # 8. Winkelbeschleunigung (mit Pendel-Effekt)
-        angular_acceleration = (torque + angular_drag_torque + pendulum_torque) / self.inertia
-
-        # 9. Integration (Euler)
+        # 14. Integration (Euler)
         self.velocity += linear_acceleration * self.dt
+        self.velocity = np.clip(self.velocity, -self.max_velocity_component, self.max_velocity_component)
         self.position += self.velocity * self.dt
 
         self.angular_velocity += angular_acceleration * self.dt
+        self.angular_velocity *= (1 - self.angular_drag_coeff)
+        self.angular_velocity = np.clip(self.angular_velocity, -self.max_angular_velocity_component, self.max_angular_velocity_component)
         self.orientation += self.angular_velocity * self.dt
 
         # Normalisiere Euler-Winkel auf [-pi, pi]
@@ -337,16 +361,13 @@ class DroneEnv(gym.Env):
         return np.array([x, y, z], dtype=np.float32)
 
     def _get_observation(self) -> np.ndarray:
-        """Erstellt die Beobachtung (Drohne immer bei [0, 0, 0])."""
-        # Position relativ zum Ziel (Ziel - Drohnenposition)
-        relative_target = self.target_position - self.position
-
         observation = np.concatenate([
-            relative_target,           # [0:3]
-            self.velocity,             # [3:6]
-            self.orientation,          # [6:9]
-            self.angular_velocity,     # [9:12]
-            self.wind_vector,          # [12:15]
+            self.position,             # [0:3]
+            self.target_position,      # [3:6]
+            self.velocity,             # [6:9]
+            self.orientation,          # [9:12]
+            self.angular_velocity,     # [12:15]
+            #self.wind_vector,          # [15:18]
         ]).astype(np.float32)
 
         return observation
