@@ -59,6 +59,10 @@ class DroneEnv(gym.Env):
         self.torque_coeff = 0.1  # Torque = torque_coeff * motor_power
         self.gravity = 9.81  # m/s^2
 
+        # Luftwiderstand (Drag)
+        self.linear_drag_coeff = 0.1  # Dämpfung für lineare Geschwindigkeit
+        self.angular_drag_coeff = 0.05  # Dämpfung für Winkelgeschwindigkeit
+
         # Rotor-Positionen in X-Konfiguration (relativ zu Drohnen-Center)
         # Motor 0: vorne-rechts (+x, +y), Motor 1: hinten-links (-x, -y)
         # Motor 2: vorne-links (-x, +y), Motor 3: hinten-rechts (+x, -y)
@@ -209,7 +213,7 @@ class DroneEnv(gym.Env):
         total_force_world = R @ total_thrust_body
 
         # 4. Windkraft hinzufügen (World-Frame)
-        wind_force = self.wind_vector * 0.1  # Vereinfachte Windkraft
+        wind_force = self.linear_drag_coeff * (self.wind_vector - self.velocity)  # Vereinfachte Windkraft
 
         # 5. Gravitation hinzufügen
         gravity_force = np.array([0, 0, -self.mass * self.gravity], dtype=np.float32)
@@ -221,8 +225,12 @@ class DroneEnv(gym.Env):
         # 7. Drehmoment berechnen
         torque = self._compute_torque(thrusts)
 
+        # 7.5. Winkel-Luftwiderstand hinzufügen (Dämpfung der Rotation)
+        # T_drag = -k * omega
+        angular_drag_torque = -self.angular_drag_coeff * self.angular_velocity
+
         # 8. Winkelbeschleunigung
-        angular_acceleration = torque / self.inertia
+        angular_acceleration = (torque + angular_drag_torque) / self.inertia
 
         # 9. Integration (Euler)
         self.velocity += linear_acceleration * self.dt

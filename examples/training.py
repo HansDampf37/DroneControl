@@ -48,7 +48,6 @@ def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../mode
 
     # Erstelle Verzeichnisse
     os.makedirs(save_path, exist_ok=True)
-    os.makedirs('../logs', exist_ok=True)
 
     print(f"Erstelle {algorithm}-Konfiguration...")
 
@@ -99,7 +98,7 @@ def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../mode
                 gamma=0.99,
                 target_entropy="auto",
             )
-            .env_runners(num_env_runners=2)  # Geändert von rollouts
+            .env_runners(num_env_runners=2)
             .resources(num_gpus=0)
             .evaluation(
                 evaluation_interval=10,
@@ -116,7 +115,7 @@ def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../mode
                 train_batch_size=2048,
                 gamma=0.99,
             )
-            .env_runners(num_env_runners=4)  # Geändert von rollouts
+            .env_runners(num_env_runners=4)
             .resources(num_gpus=0)
         )
     else:
