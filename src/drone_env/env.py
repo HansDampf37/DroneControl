@@ -28,6 +28,7 @@ class DroneEnv(gym.Env):
         dt: float = 0.01,  # Zeitschritt in Sekunden (100 Hz)
         target_change_interval: Optional[int] = None,  # Schritte bis Ziel sich ändert
         wind_strength_range: Tuple[float, float] = (0.0, 5.0),  # m/s
+        use_wind: bool = False,  # Wind-Simulation aktivieren
         render_mode: Optional[str] = None,
         # Crash-Detektion Parameter
         enable_crash_detection: bool = True,
@@ -40,6 +41,7 @@ class DroneEnv(gym.Env):
         self.dt = dt
         self.target_change_interval = target_change_interval
         self.wind_strength_range = wind_strength_range
+        self.use_wind = use_wind
         self.render_mode = render_mode
 
         # Crash-Detektion
@@ -146,7 +148,7 @@ class DroneEnv(gym.Env):
         action = np.clip(action, 0.0, 1.0)
 
         # Wind-Update (optional)
-        # self._update_wind()
+        self._update_wind()
 
         # Zielpunkt-Update (falls konfiguriert)
         if self.target_change_interval is not None:
@@ -181,6 +183,11 @@ class DroneEnv(gym.Env):
 
     def _update_wind(self):
         """Aktualisiert den Windvektor mit Ornstein-Uhlenbeck-Prozess."""
+        # Wind nur updaten wenn aktiviert
+        if not self.use_wind:
+            self.wind_vector = np.zeros(3, dtype=np.float32)
+            return
+
         # Ornstein-Uhlenbeck: dx = theta * (0 - x) * dt + sigma * dW
         drift = -self.wind_theta * self.wind_vector * self.dt
         diffusion = self.wind_sigma * np.random.normal(0, np.sqrt(self.dt), 3)
