@@ -4,6 +4,7 @@ from gymnasium import spaces
 from typing import Optional, Tuple, Dict, Any
 from .renderer import DroneEnvRenderer
 from .drone import Drone
+from .wind import Wind
 
 
 class DroneEnv(gym.Env):
@@ -67,8 +68,6 @@ class DroneEnv(gym.Env):
         self.max_steps = max_steps
         self.dt = dt
         self.target_change_interval = target_change_interval
-        self.wind_strength_range = wind_strength_range
-        self.use_wind = use_wind
         self.render_mode = render_mode
 
         # Crash detection
@@ -94,10 +93,13 @@ class DroneEnv(gym.Env):
             pendulum_damping=0.5,
         )
 
-        # Wind parameters (Ornstein-Uhlenbeck process)
-        self.wind_theta = 0.15  # Mean reversion rate
-        self.wind_sigma = 1.0   # Volatility
-        self.wind_vector = np.zeros(3, dtype=np.float32)
+        # Wind simulation
+        self.wind = Wind(
+            strength_range=wind_strength_range,
+            theta=0.15,  # Mean reversion rate
+            sigma=1.0,   # Volatility
+            enabled=use_wind
+        )
 
         # Action Space: 4 motors, each 0-1
         self.action_space = spaces.Box(
@@ -108,7 +110,7 @@ class DroneEnv(gym.Env):
         )
 
         space_side_length = 50
-        max_wind_velocity = self.wind_strength_range[1]
+        max_wind_velocity = self.wind.strength_range[1]
 
         # Observation Space
         # [0:3]   - Position relative to target (x, y, z)
@@ -174,8 +176,8 @@ class DroneEnv(gym.Env):
         # Random target point
         self.target_position = self._generate_random_target()
 
-        # Reset wind (optionally enabled)
-        self.wind_vector = np.zeros(3, dtype=np.float32)
+        # Reset wind
+        self.wind.reset()
 
         self.step_count = 0
 
@@ -202,8 +204,8 @@ class DroneEnv(gym.Env):
         """
         action = np.clip(action, 0.0, 1.0)
 
-        # Wind update (optional)
-        self._update_wind()
+        # Wind update
+        self.wind.update(self.dt)
 
         # Target position update (if configured)
         if self.target_change_interval is not None:
@@ -214,7 +216,7 @@ class DroneEnv(gym.Env):
         self.drone.update(
             motor_thrusts=action,
             dt=self.dt,
-            wind_vector=self.wind_vector,
+            wind_vector=self.wind.get_vector(),
             gravity=self.gravity,
             max_velocity=self.max_velocity_component,
             max_angular_velocity=self.max_angular_velocity_component,
@@ -235,31 +237,6 @@ class DroneEnv(gym.Env):
 
         return observation, reward, terminated, truncated, info
 
-
-    def _update_wind(self):
-        """
-        Updates the wind vector using an Ornstein-Uhlenbeck process.
-
-        The Ornstein-Uhlenbeck process creates realistic, slowly-varying wind that
-        tends to revert to zero over time (mean-reverting process).
-
-        Only updates wind if use_wind is enabled, otherwise wind remains zero.
-        """
-        # Only update wind if activated
-        if not self.use_wind:
-            self.wind_vector = np.zeros(3, dtype=np.float32)
-            return
-
-        # Ornstein-Uhlenbeck: dx = theta * (0 - x) * dt + sigma * dW
-        drift = -self.wind_theta * self.wind_vector * self.dt
-        diffusion = self.wind_sigma * np.random.normal(0, np.sqrt(self.dt), 3)
-        self.wind_vector += drift + diffusion
-
-        # Limit wind speed to maximum
-        wind_speed = np.linalg.norm(self.wind_vector)
-        max_wind = self.wind_strength_range[1]
-        if wind_speed > max_wind:
-            self.wind_vector = self.wind_vector / wind_speed * max_wind
 
     def _generate_random_target(self) -> np.ndarray:
         """
@@ -302,7 +279,7 @@ class DroneEnv(gym.Env):
             self.drone.velocity,           # [3:6]
             self.drone.orientation,        # [6:9]
             self.drone.angular_velocity,   # [9:12]
-            self.wind_vector,              # [12:15]
+            self.wind.get_vector(),        # [12:15]
         ]).astype(np.float32)
 
         return observation
@@ -387,7 +364,7 @@ class DroneEnv(gym.Env):
             orientation=self.drone.orientation,
             angular_velocity=self.drone.angular_velocity,
             target_position=self.target_position,
-            wind_vector=self.wind_vector,
+            wind_vector=self.wind.get_vector(),
             rotation_matrix=R,
             rotor_positions=self.drone.rotor_positions,
             step_count=self.step_count,

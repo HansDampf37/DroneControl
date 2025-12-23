@@ -56,7 +56,8 @@ def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../mode
         "max_steps": 100,
         "render_mode": None,
         "enable_crash_detection": True,
-        "dt": 0.02
+        "dt": 0.02,
+        "use_wind": False
     }
 
     # Algorithm configuration
