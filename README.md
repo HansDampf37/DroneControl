@@ -1,71 +1,71 @@
-# Drohnen-RL Environment 🚁
+# Drone RL Environment 🚁
 
-Ein Gymnasium-kompatibles Reinforcement Learning Environment für Quadcopter-Steuerung in Python.
+A Gymnasium-compatible Reinforcement Learning environment for quadcopter control in Python.
 
-## Inhaltsverzeichnis
+## Table of Contents
 
 - [Features](#features)
-- [Schnellstart](#schnellstart)
+- [Quick Start](#quick-start)
 - [Environment Details](#environment-details)
-- [Physik-Modell](#physik-modell)
-- [Konfiguration](#konfiguration)
-- [RL-Training](#rl-training)
-- [Projektstruktur](#projektstruktur)
-- [Weitere Dokumentation](#weitere-dokumentation)
+- [Physics Model](#physics-model)
+- [Configuration](#configuration)
+- [RL Training](#rl-training)
+- [Project Structure](#project-structure)
+- [Additional Documentation](#additional-documentation)
 
 ## Features
 
-- **Realistische Physik**: Vereinfachte Quadcopter-Physik mit 4 unabhängigen Motoren in X-Konfiguration
-- **Dynamischer Wind**: Ornstein-Uhlenbeck-Prozess für realistische Windänderungen
-- **Dense Reward**: `1/(1 + distance)` für effizientes Training
-- **Optimierte 2-Ansichten-Visualisierung**: Draufsicht (XY) + Vorderansicht (XZ) wie technische Zeichnung
-- **Gymnasium-kompatibel**: Standard RL-Interface
-- **Crash-Detektion**: Automatische Episode-Beendigung bei Absturz
+- **Realistic Physics**: Simplified quadcopter physics with 4 independent motors in X-configuration
+- **Dynamic Wind**: Ornstein-Uhlenbeck process for realistic wind variations
+- **Dense Reward**: `((max_distance - distance) / max_distance) ** 2`
+- **Optimized 2-View Visualization**: Top view (XY) + Front view (XZ) like technical drawings
+- **Gymnasium-Compatible**: Standard RL interface
+- **Crash Detection**: Automatic episode termination on crash
 
-## Schnellstart
+## Quick Start
 
 ### Installation
 ```bash
-# Clone Repository
+# Clone repository
 git clone <your-repo-url>
 cd drone-control
 
-# Installiere Dependencies
+# Install dependencies
 pip install -r requirements.txt
 
-# Optional: Entwickler-Installation
+# Optional: Developer installation
 pip install -e .
 ```
 
-### Einfacher Test
+### Simple Test
 ```bash
-# Minimaler Rendering-Test (20 Steps)
+# Minimal rendering test (20 steps)
 python tests/test_minimal_render.py
 
-# Umfassende Tests
+# Comprehensive tests
 python tests/test_env.py
 ```
 
-### Beispiel: Random Agent
+### Example: Random Agent
 ```bash
-# Ohne Visualisierung
+# Without visualization
 python examples/random_agent.py --episodes 5
 
-# Mit Visualisierung
+# With visualization
 python examples/random_agent.py --episodes 3 --render
 ```
 
-### Verwendung im Code
+### Usage in Code
 ```python
 from src.drone_env import DroneEnv
 
-# Environment erstellen
+# Create environment
 env = DroneEnv(max_steps=1000, render_mode="human")
 obs, info = env.reset()
 
-# Haupt-Loop
+# Main loop
 for _ in range(1000):
-    action = env.action_space.sample()  # Zufällige Aktion
+    action = env.action_space.sample()  # Random action
     obs, reward, terminated, truncated, info = env.step(action)
     env.render()
     
@@ -78,68 +78,73 @@ env.close()
 ## Environment Details
 
 ### Action Space
-- **Typ**: `Box(4,)` mit Wertebereich [0, 1]
-- **Beschreibung**: 4 Motoren (0-100% Thrust)
-  - Motor 0: Vorne-Rechts
-  - Motor 1: Hinten-Links  
-  - Motor 2: Vorne-Links
-  - Motor 3: Hinten-Rechts
+- **Type**: `Box(4,)` with value range [0, 1]
+- **Description**: 4 motors (0-100% thrust)
+  - Motor 0: Front-Right
+  - Motor 1: Rear-Left  
+  - Motor 2: Front-Left
+  - Motor 3: Rear-Right
 
 ### Observation Space
-- **Typ**: `Box(15,)`
-- **Komponenten**:
-  - `[0:3]` - Relative Position zum Ziel (x, y, z)
-  - `[3:6]` - Lineare Geschwindigkeit (vx, vy, vz)
-  - `[6:9]` - Orientierung (Roll, Pitch, Yaw)
-  - `[9:12]` - Winkelgeschwindigkeit (wx, wy, wz)
-  - `[12:15]` - Windvektor absolut (wx, wy, wz)
+- **Type**: `Box(15,)` 
+- **Components**:
+  - `[0:3]` - Relative position to target (x, y, z)
+  - `[3:6]` - Linear velocity (vx, vy, vz)
+  - `[6:9]` - Orientation (Roll, Pitch, Yaw)
+  - `[9:12]` - Angular velocity (wx, wy, wz)
+  - `[12:15]` - Wind vector (wx, wy, wz)
 
-**Hinweis**: Die Drohne ist in der Beobachtung immer bei Position (0, 0, 0). Der Zielpunkt wird relativ angegeben.
+**Note**: The drone is always at position (0, 0, 0) in the observation. The target point is given relative to the drone.
 
 ### Reward Function
 ```python
 reward = ((max_distance_to_target - distance_to_target) / max_distance_to_target) ** 2
 ```
-- Wertebereich: (0, 1]
-- Dense Reward für besseres Training
+- Value range: [0, 1]
+- Dense reward for better training
 
 ### Termination
-- **Truncated**: Nach festen `max_steps` (Standard: 1000)
-- **Terminated**: Bei Crash (optional, siehe Crash-Detektion)
-  - Z-Coordinate < -5.0m (unter Boden)
-  - Extreme Neigung (>80° Roll oder Pitch)
+- **Truncated**: After fixed `max_steps` (default: 1000)
+- **Terminated**: On crash (optional, see Crash Detection)
+  - Vertical velocity < -20.0 m/s (falling too fast)
+  - Extreme tilt (>80° roll or pitch)
+  - Distance to target exceeds maximum
 
-## Physik-Modell
+## Physics Model
 
-### Quadcopter X-Konfiguration
-- 4 Rotoren diagonal angeordnet (±45° zu Achsen)
-- Masse: 1.0 kg
-- Arm-Länge: 0.25 m
+### Quadcopter X-Configuration
+- 4 rotors arranged diagonally (±45° to axes)
+- Mass: 1.0 kg
+- Arm length: 0.25 m
 
-### Kraftberechnung
-1. **Thrust**: Kraftvektor senkrecht zur Rotorebene, skaliert mit Motor-Power
-2. **Drehmoment**:
-   - Roll: Thrust-Differenz zwischen linken/rechten Motoren
-   - Pitch: Thrust-Differenz zwischen vorderen/hinteren Motoren
-   - Yaw: Reaktives Drehmoment aus Rotor-Drehrichtungen
-3. **Wind**: Ornstein-Uhlenbeck-Prozess, anpassbar
-4. **Integration**: Euler-Integration mit 0.01s Zeitschritt (100 Hz)
+### Force Calculation
+1. **Thrust**: Force vector perpendicular to rotor plane, scaled by motor power
+2. **Torque**:
+   - Roll: Thrust difference between left/right motors
+   - Pitch: Thrust difference between front/rear motors
+   - Yaw: Reactive torque from rotor spin directions
+3. **Wind**: Ornstein-Uhlenbeck process, configurable
+4. **Integration**: Euler integration with 0.01s timestep (100 Hz)
 
-## Konfiguration
+## Configuration
 
 ```python
 env = DroneEnv(
-    max_steps=1000,                      # Episode-Länge
-    dt=0.01,                             # Zeitschritt (s)
-    target_change_interval=None,         # Ziel-Änderung (None = fix)
-    wind_strength_range=(0.0, 5.0),     # Wind-Stärke (m/s)
-    render_mode="human"                  # "human", "rgb_array", None
+    max_steps=1000,                      # Episode length
+    dt=0.01,                             # Timestep (s)
+    target_change_interval=None,         # Target change (None = fixed)
+    wind_strength_range=(0.0, 5.0),     # Wind strength (m/s)
+    use_wind=False,                      # Enable wind simulation
+    render_mode="human",                 # "human", "rgb_array", None
+    enable_crash_detection=True,         # Enable crash detection
+    crash_z_vel_threshold=-20.0,        # Crash velocity threshold
+    crash_tilt_threshold=80.0            # Crash tilt threshold (degrees)
 )
 ```
 
-## RL-Training
+## RL Training
 
-### Beispiel mit Ray RLlib
+### Example with Ray RLlib
 ```bash
 # Installation
 pip install ray[rllib] torch
@@ -151,56 +156,58 @@ python examples/training.py --mode train --algorithm PPO --timesteps 100000
 python examples/training.py --mode eval --algorithm PPO --model-path models/drone_model
 ```
 
-### Empfohlene Algorithmen
-- **PPO**: Stabil, gut für Einstieg, On-Policy
-- **SAC**: Sehr gute Performance bei kontinuierlichen Actions, Off-Policy
-- **APPO**: Asynchronous PPO, gut für verteiltes Training
+### Recommended Algorithms
+- **PPO**: Stable, good for beginners, on-policy
+- **SAC**: Very good performance with continuous actions, off-policy
+- **APPO**: Asynchronous PPO, good for distributed training
 
 ### Baseline Performance
-- **Hover Agent** (alle Motoren ~25%): Reward ~0.05-0.10
-- **Trainierter Agent**: Reward >0.3-0.5 nach 100k Steps
+- **Hover Agent** (all motors ~25%): Reward ~0.05-0.10
+- **Trained Agent**: Reward >0.3-0.5 after 100k steps
 
-## Projektstruktur
+## Project Structure
 
 ```
 drone-control/
-├── src/drone_env/          # Haupt-Environment
+├── src/drone_env/          # Main environment
 │   ├── __init__.py
-│   └── env.py
-├── tests/                  # Tests & Debugging
+│   ├── drone.py           # Drone physics model
+│   ├── env.py             # Gymnasium environment
+│   └── renderer.py        # Visualization
+├── tests/                  # Tests & debugging
 │   ├── test_env.py
 │   ├── test_rendering.py
 │   └── ...
-├── examples/               # Beispiel-Skripte
+├── examples/               # Example scripts
 │   ├── random_agent.py
 │   └── training.py
-├── docs/                   # Dokumentation
-│   ├── DEVELOPMENT.md      # Entwickler-Guide
-│   └── TROUBLESHOOTING.md  # Häufige Probleme
+├── docs/                   # Documentation
+│   ├── DEVELOPMENT.md      # Developer guide
+│   └── TROUBLESHOOTING.md  # Common issues
 ├── setup.py
 ├── requirements.txt
-└── README.md              # Diese Datei
+└── README.md              # This file
 ```
 
-## Weitere Dokumentation
+## Additional Documentation
 
-- **[Development Guide](docs/DEVELOPMENT.md)** - Entwickler-Informationen, Struktur, Erweiterungen
-- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Häufige Probleme, insbesondere Rendering
+- **[Development Guide](docs/DEVELOPMENT.md)** - Developer information, structure, extensions
+- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues, especially rendering
 
 ## Roadmap
 
-- [ ] 3D-Visualisierung
-- [ ] Recurrent Policies (Wind-Inferenz ohne direkte Observation)
-- [ ] Mehrere Zielpunkte pro Episode
-- [ ] Hindernisse
-- [ ] Crash-Detektion
-- [ ] Energieverbrauch in Reward
+- [ ] 3D visualization
+- [ ] Recurrent policies (wind inference without direct observation)
+- [ ] Multiple target points per episode
+- [ ] Obstacles
+- [x] Crash detection
+- [ ] Energy consumption in reward
 
-## Lizenz
+## License
 
 MIT
 
-## Autor
+## Author
 
 Adrian - 2025
 

@@ -1,49 +1,49 @@
-# Performance-Zusammenfassung: Rendering-Optimierung
+# Performance Summary: Rendering Optimization
 
-## Übersicht
+## Overview
 
-Die Render-Methode des DroneEnv wurde erfolgreich optimiert, um die Performance bei gleichbleibender Funktionalität deutlich zu verbessern.
+The DroneEnv render method has been successfully optimized to significantly improve performance while maintaining full functionality.
 
-## Benchmark-Ergebnisse
+## Benchmark Results
 
-### Aktuelle Performance (Optimiert)
+### Current Performance (Optimized)
 ```
-Simulation (ohne Rendering): ~7850 steps/sec
-Rendering (human mode):       ~10-11 FPS
-Frame-Zeit:                   ~90-95ms pro Frame
-```
-
-### Geschätzte Alte Performance (Vorher)
-```
-Rendering (human mode):       ~3-4 FPS
-Frame-Zeit:                   ~250-330ms pro Frame
+Simulation (without rendering): ~7850 steps/sec
+Rendering (human mode):         ~10-11 FPS
+Frame time:                     ~90-95ms per frame
 ```
 
-### **Speedup: ~3x schneller** 🚀
+### Estimated Old Performance (Before)
+```
+Rendering (human mode):         ~3-4 FPS
+Frame time:                     ~250-330ms per frame
+```
 
-## Implementierte Optimierungen
+### **Speedup: ~3x faster** 🚀
 
-### 1. **Objekt-Wiederverwendung**
-- ✅ 26 Plot-Objekte werden wiederverwendet statt neu erstellt
-- ✅ Nur Positionen/Daten werden aktualisiert
+## Implemented Optimizations
 
-### 2. **Keine Clear-Operationen**
-- ✅ `ax.clear()` wurde entfernt (sehr teuer)
-- ✅ Axes werden nur einmal initialisiert
+### 1. **Object Reuse**
+- ✅ 26 plot objects are reused instead of recreated
+- ✅ Only positions/data are updated
 
-### 3. **Bedingte Darstellung**
-- ✅ Neigungspfeile nur bei sichtbarer Neigung
-- ✅ Wind-Pfeil nur bei spürbarem Wind (>0.1 m/s)
+### 2. **No Clear Operations**
+- ✅ `ax.clear()` removed (very expensive)
+- ✅ Axes are only initialized once
 
-### 4. **Reduzierte Berechnungen**
-- ✅ Rotationsmatrix nur 1x pro Frame
-- ✅ Legenden nur beim ersten Render
+### 3. **Conditional Rendering**
+- ✅ Tilt arrows only when tilt is visible
+- ✅ Wind arrow only when wind is noticeable (>0.1 m/s)
 
-### 5. **Moderne Matplotlib-API**
-- ✅ `buffer_rgba()` statt veraltetes `tostring_rgb()`
-- ✅ `set_data()` für Line-Updates
+### 4. **Reduced Calculations**
+- ✅ Rotation matrix only 1x per frame
+- ✅ Legends only on first render
 
-## Wiederverwendete Objekte
+### 5. **Modern Matplotlib API**
+- ✅ `buffer_rgba()` instead of deprecated `tostring_rgb()`
+- ✅ `set_data()` for line updates
+
+## Reused Objects
 
 ```python
 _render_objects = {
@@ -63,172 +63,172 @@ _render_objects = {
     'connection_line_front': Line2D,      # 1
     'wind_arrow': FancyArrow,             # 1
     'info_text': Text,                    # 1
-    'boden_line': Line2D,                 # 1
+    'ground_line': Line2D,                # 1
 }
-# Gesamt: 30+ Objekte wiederverwendet!
+# Total: 30+ objects reused!
 ```
 
 ## Frame-Time Breakdown
 
-### Erste Frame (mit Initialisierung)
+### First Frame (with initialization)
 ```
-Initialisierung:   ~150ms
+Initialization:    ~150ms
   - Figure/Axes:     ~50ms
-  - Objekte:         ~100ms
+  - Objects:         ~100ms
 Rendering:         ~50ms
 ------------------------
-Gesamt:            ~200ms
+Total:             ~200ms
 ```
 
-### Nachfolgende Frames (Update only)
+### Subsequent Frames (update only)
 ```
-Update-Operationen: ~60ms
-  - Positionen:       ~20ms
-  - Rotoren:          ~20ms
-  - Text/Info:        ~10ms
-  - Arrows:           ~10ms
-Rendering:          ~30ms
+Update Operations: ~60ms
+  - Positions:       ~20ms
+  - Rotors:          ~20ms
+  - Text/Info:       ~10ms
+  - Arrows:          ~10ms
+Rendering:         ~30ms
 ------------------------
-Gesamt:             ~90ms
+Total:             ~90ms
 ```
 
 ## Two-View Layout
 
-Das optimierte Rendering zeigt zwei orthogonale Ansichten:
+The optimized rendering shows two orthogonal views:
 
-### 📊 Draufsicht (Top View - XY)
-- Horizontale Position und Bewegung
-- Yaw-Rotation sichtbar
-- Wind-Vektor (falls vorhanden)
-- Info-Box mit Metriken
+### 📊 Top View (XY Plane)
+- Horizontal position and movement
+- Yaw rotation visible
+- Wind vector (if present)
+- Info box with metrics
 
-### 📊 Vorderansicht (Front View - XZ)  
-- Vertikale Position (Höhe)
-- Pitch-Neigung deutlich sichtbar
-- Boden-Referenzlinie
-- Höhenänderungen klar erkennbar
+### 📊 Front View (XZ Plane)
+- Vertical position (altitude)
+- Pitch tilt clearly visible
+- Ground reference line
+- Height changes easily recognizable
 
-## Speichereffizienz
+## Memory Efficiency
 
-### Vorher (geschätzt)
+### Before (estimated)
 ```
-Pro Frame:
-  - 30+ neue Objekte erstellt
-  - Axes komplett gecleared
-  - Grid/Labels neu gesetzt
-  → ~2-3 MB Allokationen/Frame
-```
-
-### Nachher
-```
-Pro Frame:
-  - 0 neue Objekte (außer Arrows bei Bedarf)
-  - Nur Daten aktualisiert
-  - Axes bleiben bestehen
-  → ~0.1-0.2 MB Allokationen/Frame
+Per Frame:
+  - 30+ new objects created
+  - Axes completely cleared
+  - Grid/labels reset
+  → ~2-3 MB allocations/frame
 ```
 
-**Memory-Reduktion: ~90%** 🎯
-
-## CPU-Auslastung
-
-### Vorher
+### After
 ```
-Rendering:  85-95% einer CPU-Core
+Per Frame:
+  - 0 new objects (except arrows when needed)
+  - Only data updated
+  - Axes persist
+  → ~0.1-0.2 MB allocations/frame
+```
+
+**Memory Reduction: ~90%** 🎯
+
+## CPU Utilization
+
+### Before
+```
+Rendering:  85-95% of one CPU core
 Simulation:  5-10%
 ```
 
-### Nachher
+### After
 ```
-Rendering:  60-70% einer CPU-Core
+Rendering:  60-70% of one CPU core
 Simulation:  5-10%
 ```
 
-**CPU-Reduktion: ~25%** ⚡
+**CPU Reduction: ~25%** ⚡
 
-## Vergleich: Vorher vs. Nachher
+## Comparison: Before vs. After
 
-| Metrik | Vorher | Nachher | Verbesserung |
-|--------|--------|---------|--------------|
+| Metric | Before | After | Improvement |
+|--------|--------|-------|-------------|
 | FPS | ~3-4 | ~10-11 | **+175%** |
-| Frame-Zeit | ~250-330ms | ~90-95ms | **-70%** |
-| Objekt-Erstellungen | 30+/Frame | 0-2/Frame | **-95%** |
+| Frame Time | ~250-330ms | ~90-95ms | **-70%** |
+| Object Creations | 30+/frame | 0-2/frame | **-95%** |
 | Memory/Frame | ~2-3 MB | ~0.1-0.2 MB | **-90%** |
-| CPU-Last | 85-95% | 60-70% | **-25%** |
+| CPU Load | 85-95% | 60-70% | **-25%** |
 
-## Verwendung
+## Usage
 
 ```python
-# Einfach wie gewohnt verwenden!
+# Simply use as before!
 env = DroneEnv(render_mode='human')
 obs, info = env.reset()
 
 for _ in range(1000):
     action = agent.get_action(obs)
     obs, reward, done, truncated, info = env.step(action)
-    env.render()  # Jetzt 3x schneller! 🚀
+    env.render()  # Now 3x faster! 🚀
 ```
 
-## Weitere mögliche Optimierungen
+## Further Possible Optimizations
 
-Falls noch mehr Performance benötigt wird:
+If even more performance is needed:
 
-1. **Blitting** (~2x Speedup möglich)
-   - Nur geänderte Bereiche neu zeichnen
-   - Erfordert mehr Code-Komplexität
+1. **Blitting** (~2x speedup possible)
+   - Only redraw changed regions
+   - Requires more code complexity
 
-2. **Frame-Skipping** (~Nx Speedup)
-   - Nur jeden N-ten Frame rendern
-   - Einfach zu implementieren
+2. **Frame Skipping** (~Nx speedup)
+   - Only render every N-th frame
+   - Easy to implement
 
-3. **Downsampling** (~30% Speedup)
-   - Kleinere Figure-Größe (z.B. 800x1120 statt 1000x1400)
-   - Reduzierte Auflösung
+3. **Downsampling** (~30% speedup)
+   - Smaller figure size (e.g., 800x1120 instead of 1000x1400)
+   - Reduced resolution
 
-4. **Threading** (~40% Speedup)
-   - Rendering in separatem Thread
-   - Komplexer, race conditions möglich
+4. **Threading** (~40% speedup)
+   - Rendering in separate thread
+   - More complex, possible race conditions
 
-5. **Alternative Backends** (~20% Speedup)
-   - `Agg` statt `TkAgg` für headless
-   - Keine GUI, nur rgb_array
+5. **Alternative Backends** (~20% speedup)
+   - `Agg` instead of `TkAgg` for headless
+   - No GUI, only rgb_array
 
 ## Testing
 
-Performance-Test ausführen:
+Run performance test:
 ```bash
-python test_rendering_performance.py
+python tests/test_rendering_performance.py
 ```
 
-Erwartete Ausgabe:
+Expected output:
 ```
-Simulation (ohne Rendering): >7000 steps/sec
-Rendering (human mode):       >10 FPS
+Simulation (without rendering): >7000 steps/sec
+Rendering (human mode):         >10 FPS
 ```
 
-## Kompatibilität
+## Compatibility
 
 - ✅ Gymnasium API
-- ✅ RGB-Array Modus
-- ✅ Human Modus
-- ✅ Headless-Server (mit Agg-Backend)
+- ✅ RGB-Array mode
+- ✅ Human mode
+- ✅ Headless server (with Agg backend)
 - ✅ Matplotlib 3.5+
 - ✅ Python 3.8+
 
-## Fazit
+## Conclusion
 
-Die Rendering-Optimierung war ein **voller Erfolg**:
+The rendering optimization was a **complete success**:
 
-- **3x schnelleres Rendering** bei voller Funktionalität
-- **90% weniger Speicher-Allokationen**
-- **25% weniger CPU-Last**
-- **Gleiche visuelle Qualität**
-- **Keine API-Änderungen**
+- **3x faster rendering** with full functionality
+- **90% fewer memory allocations**
+- **25% less CPU load**
+- **Same visual quality**
+- **No API changes**
 
-Die Two-View Darstellung (Draufsicht + Vorderansicht) bietet zudem einen deutlich besseren Einblick in die 3D-Position und -Orientierung der Drohne, ähnlich einer professionellen technischen Zeichnung.
+The two-view layout (top view + front view) also provides significantly better insight into the 3D position and orientation of the drone, similar to professional technical drawings.
 
 ## Credits
 
-Optimiert am: 2025-12-23
-Technologien: Gymnasium, Matplotlib, NumPy
+Optimized on: 2025-12-23
+Technologies: Gymnasium, Matplotlib, NumPy
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Schneller Test für die optimierte Rendering-Performance.
+Quick test for optimized rendering performance.
 """
 
 from src.drone_env.env import DroneEnv
@@ -12,8 +12,8 @@ def quick_test():
     print("🚁 QUICK RENDERING PERFORMANCE TEST")
     print("=" * 60)
 
-    # Test 1: Baseline ohne Rendering
-    print("\n1. Baseline (ohne Rendering)...")
+    # Test 1: Baseline without rendering
+    print("\n1. Baseline (without rendering)...")
     env = DroneEnv(render_mode=None, max_steps=100)
     obs, info = env.reset()
 
@@ -26,8 +26,8 @@ def quick_test():
     print(f"   ✅ {baseline_fps:.0f} steps/sec ({elapsed*10:.1f}ms per step)")
     env.close()
 
-    # Test 2: Mit Rendering
-    print("\n2. Mit Rendering (human mode)...")
+    # Test 2: With rendering
+    print("\n2. With rendering (human mode)...")
     env = DroneEnv(render_mode='human', max_steps=100)
     obs, info = env.reset()
 
@@ -41,9 +41,9 @@ def quick_test():
     print(f"   ✅ {render_fps:.1f} FPS ({elapsed/30*1000:.0f}ms per frame)")
     env.close()
 
-    # Zusammenfassung
+    # Summary
     print("\n" + "=" * 60)
-    print("ERGEBNIS")
+    print("RESULTS")
     print("=" * 60)
     print(f"Simulation:  {baseline_fps:>6.0f} steps/sec")
     print(f"Rendering:   {render_fps:>6.1f} FPS")
@@ -51,19 +51,19 @@ def quick_test():
     print(f"Overhead:    {overhead:>6.1f}%")
     print("=" * 60)
 
-    # Bewertung
+    # Evaluation
     if render_fps >= 10:
-        print("✅ EXCELLENT - Rendering ist gut optimiert!")
+        print("✅ EXCELLENT - Rendering is well optimized!")
     elif render_fps >= 7:
-        print("✓  GOOD - Rendering ist akzeptabel")
+        print("✓  GOOD - Rendering is acceptable")
     else:
-        print("⚠  SLOW - Rendering könnte optimiert werden")
+        print("⚠  SLOW - Rendering could be optimized")
 
-    print("\nOptimierungen aktiv:")
-    print("  ✓ Objekt-Wiederverwendung")
-    print("  ✓ Update statt Clear")
-    print("  ✓ Bedingte Darstellung")
-    print("  ✓ Two-View Layout (Top + Front)")
+    print("\nActive optimizations:")
+    print("  ✓ Object reuse")
+    print("  ✓ Update instead of clear")
+    print("  ✓ Conditional rendering")
+    print("  ✓ Two-View layout (Top + Front)")
     print("=" * 60 + "\n")
 
 if __name__ == "__main__":

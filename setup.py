@@ -1,4 +1,4 @@
-"""Setup-Konfiguration für das Drohnen-RL-Environment."""
+"""Setup configuration for the Drone RL Environment."""
 from setuptools import setup, find_packages
 
 with open("README.md", "r", encoding="utf-8") as fh:
@@ -11,7 +11,7 @@ setup(
     name="drone-env",
     version="0.1.0",
     author="Adrian Degenkolb",
-    description="Gymnasium Environment für Quadcopter-Steuerung mit Reinforcement Learning",
+    description="Gymnasium Environment for Quadcopter Control with Reinforcement Learning",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/yourusername/drone-control",

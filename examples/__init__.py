@@ -1,2 +1,2 @@
-"""Beispiel-Skripte für das Drohnen-Environment."""
+"""Example scripts for the Drone Environment."""
 

@@ -1,56 +1,56 @@
-# Crash-Detektion
+# Crash Detection
 
-Die Drohne erkennt jetzt Abstürze und beendet die Episode automatisch.
+The drone now detects crashes and automatically terminates the episode.
 
 ## Features
 
-### ✅ Implementiert
+### ✅ Implemented
 
-**1. Low Z-Coordinate (Primär)**
-- **Effizienteste Methode**: O(1) Vergleich
-- **Standard-Threshold**: z < -5.0m
-- **Eindeutig**: Drohne ist definitiv abgestürzt
+**1. Low Z-Velocity (Primary)**
+- **Most Efficient Method**: O(1) comparison
+- **Default Threshold**: vz < -20.0 m/s
+- **Clear**: Drone is definitely falling/crashed
 
-**2. Extreme Tilt (Sekundär)**
-- **Für unkontrollierte Drohne**: |Roll| > 80° ODER |Pitch| > 80°
-- **Standard-Threshold**: 80° (in Radiant umgerechnet)
-- **Zusätzlicher Check**: Fängt Totalverlust der Kontrolle ab
+**2. Extreme Tilt (Secondary)**
+- **For Uncontrolled Drone**: |Roll| > 80° OR |Pitch| > 80°
+- **Default Threshold**: 80° (converted to radians)
+- **Additional Check**: Catches total loss of control
 
-**3. Konfigurierbar**
-- Crash-Detektion kann deaktiviert werden
-- Alle Thresholds sind anpassbar
+**3. Configurable**
+- Crash detection can be disabled
+- All thresholds are adjustable
 
-## Verwendung
+## Usage
 
-### Standard (Crash-Detektion aktiviert)
+### Default (Crash Detection Enabled)
 ```python
 from src.drone_env import DroneEnv
 
 env = DroneEnv(
-    enable_crash_detection=True,  # Standard
-    crash_z_threshold=-5.0,        # Standard
-    crash_tilt_threshold=80.0,     # Standard (Grad)
+    enable_crash_detection=True,     # Default
+    crash_z_vel_threshold=-20.0,     # Default (m/s)
+    crash_tilt_threshold=80.0,       # Default (degrees)
 )
 ```
 
-### Angepasste Thresholds
+### Custom Thresholds
 ```python
 env = DroneEnv(
-    crash_z_threshold=-10.0,       # Tiefer = mehr Toleranz
-    crash_tilt_threshold=85.0,     # Höher = mehr Toleranz
+    crash_z_vel_threshold=-30.0,     # Lower = more tolerance
+    crash_tilt_threshold=85.0,       # Higher = more tolerance
 )
 ```
 
-### Deaktiviert (wie vorher)
+### Disabled (Like Before)
 ```python
 env = DroneEnv(
     enable_crash_detection=False
 )
 ```
 
-## Verhalten
+## Behavior
 
-### Episode endet bei Crash
+### Episode Ends on Crash
 ```python
 obs, info = env.reset()
 
@@ -59,55 +59,55 @@ for step in range(1000):
     
     if terminated:
         if info['crashed']:
-            print("Drohne abgestürzt!")
+            print("Drone crashed!")
         break
     
     if truncated:
-        print("Max Steps erreicht")
+        print("Max steps reached")
         break
 ```
 
-### Info-Dictionary
+### Info Dictionary
 ```python
 info = {
     'distance_to_target': float,
     'position': np.ndarray,
     'target_position': np.ndarray,
     'step_count': int,
-    'crashed': bool,  # ← NEU
+    'crashed': bool,  # ← NEW
 }
 ```
 
-## Crash-Kriterien
+## Crash Criteria
 
-### 1. Z-Coordinate
+### 1. Z-Velocity
 ```python
-if self.position[2] < self.crash_z_threshold:
+if self.velocity[2] < self.crash_z_vel_threshold:
     return True  # Crash!
 ```
 
-**Typische Werte:**
-- z = 0.0m: Start-Höhe
-- z = -2.0m: Noch OK (leichter Abstieg)
-- z = -5.0m: Crash! (Standard-Threshold)
-- z = -10.0m: Definitiv gecrasht
+**Typical Values:**
+- vz = 0.0 m/s: Hovering
+- vz = -5.0 m/s: Controlled descent
+- vz = -20.0 m/s: Crash! (Default Threshold)
+- vz = -30.0 m/s: Definitely crashed
 
-### 2. Tilt (Neigung)
+### 2. Tilt (Orientation)
 ```python
 roll, pitch, _ = self.orientation
 
 if abs(roll) > self.crash_tilt_threshold:
-    return True  # Komplett seitlich gekippt
+    return True  # Completely tilted sideways
 
 if abs(pitch) > self.crash_tilt_threshold:
-    return True  # Komplett vorwärts/rückwärts gekippt
+    return True  # Completely tilted forward/backward
 ```
 
-**Typische Werte:**
-- 0°-30°: Normale Manöver
-- 30°-60°: Aggressive Manöver
-- 60°-80°: Sehr aggressiv, aber noch kontrollierbar
-- >80°: Unkontrolliert, Crash! (Standard-Threshold)
+**Typical Values:**
+- 0°-30°: Normal maneuvers
+- 30°-60°: Aggressive maneuvers
+- 60°-80°: Very aggressive, but still controllable
+- >80°: Uncontrolled, Crash! (Default Threshold)
 
 ## Tests
 
@@ -115,78 +115,78 @@ if abs(pitch) > self.crash_tilt_threshold:
 python tests/test_crash_detection.py
 ```
 
-**Test-Szenarien:**
-1. ✅ Crash durch zu niedrige Z-Koordinate
-2. ✅ Crash durch extreme Neigung
-3. ✅ Keine Detektion wenn deaktiviert
-4. ✅ Kein False Positive bei normalem Hover
-5. ✅ 'crashed' Flag in info vorhanden
+**Test Scenarios:**
+1. ✅ Crash due to low z-velocity
+2. ✅ Crash due to extreme tilt
+3. ✅ No detection when disabled
+4. ✅ No false positives during normal hover
+5. ✅ 'crashed' flag present in info
 
-## Vergleich der Methoden
+## Method Comparison
 
-| Methode | Effizienz | Eindeutigkeit | False Positives | Frühzeitige Detektion |
-|---------|-----------|---------------|-----------------|----------------------|
-| **Z-Coordinate** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ |
+| Method | Efficiency | Clarity | False Positives | Early Detection |
+|---------|-----------|---------|-----------------|-----------------|
+| **Z-Velocity** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
 | **Extreme Tilt** | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
-| Z-Velocity (nicht impl.) | ⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
+| Z-Coordinate (not impl.) | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ |
 
-**Warum Z-Coordinate als Primär?**
-- ✅ Einfachste Berechnung (1 Vergleich)
-- ✅ Keine False Positives
-- ✅ Eindeutige physikalische Grenze
-- ✅ Stabil über verschiedene Szenarien
+**Why Z-Velocity as Primary?**
+- ✅ Simple calculation (1 comparison)
+- ✅ Few false positives
+- ✅ Early detection (before hitting ground)
+- ✅ Works for rapid descents
 
-**Warum Extreme Tilt als Sekundär?**
-- ✅ Erkennt Totalverlust der Kontrolle
-- ✅ Früher als Z-Threshold (Drohne noch oben aber kippt um)
-- ✅ Zusätzlicher Sicherheits-Check
+**Why Extreme Tilt as Secondary?**
+- ✅ Detects total loss of control
+- ✅ Catches flips/rolls
+- ✅ Additional safety check
 
-## Auswirkungen auf Training
+## Impact on Training
 
-### Vorher (ohne Crash-Detektion)
+### Before (Without Crash Detection)
 ```
 Episode: 1000 Steps → truncated
-→ Agent bekommt kein negatives Signal für Crash
+→ Agent receives no negative signal for crash
 ```
 
-### Jetzt (mit Crash-Detektion)
+### Now (With Crash Detection)
 ```
 Episode: 127 Steps → terminated (crashed)
-→ Episode endet früher
-→ Agent lernt: Crash = schlecht
+→ Episode ends early
+→ Agent learns: Crash = bad
 ```
 
-### Empfehlungen für Training
+### Training Recommendations
 
-**Option 1: Mit Crash-Penalty (empfohlen)**
+**Option 1: With Crash Penalty (Recommended)**
 ```python
 def _compute_reward(self) -> float:
-    distance = np.linalg.norm(self.target_position - self.position)
-    reward = 1.0 / (1.0 + distance)
+    distance = np.linalg.norm(self.target_position - self.drone.position)
+    reward = ((self.max_dist_to_target - distance) / self.max_dist_to_target) ** 2
     
-    # Großer Penalty bei Crash
+    # Large penalty on crash
     if self._check_crash():
         reward -= 10.0
     
     return float(reward)
 ```
 
-**Option 2: Ohne extra Penalty**
+**Option 2: Without Extra Penalty**
 ```python
-# Einfach Episode beenden
-# Agent lernt durch kürzere Episode = weniger Gesamt-Reward
+# Simply end episode
+# Agent learns through shorter episode = less total reward
 ```
 
-**Option 3: Deaktiviert für Exploration**
+**Option 3: Disabled for Exploration**
 ```python
-# Am Anfang des Trainings
+# At start of training
 env = DroneEnv(enable_crash_detection=False)
 
-# Später aktivieren
+# Enable later
 env = DroneEnv(enable_crash_detection=True)
 ```
 
-## Beispiel: Crash-sichere Policy
+## Example: Crash-Safe Policy
 
 ```python
 from src.drone_env import DroneEnv
@@ -203,7 +203,7 @@ for episode in range(100):
     done = False
     
     while not done:
-        # Deine Policy hier
+        # Your policy here
         action = env.action_space.sample()
         
         obs, reward, terminated, truncated, info = env.step(action)
@@ -220,42 +220,42 @@ crash_rate = total_crashes / total_episodes * 100
 print(f"\nCrash Rate: {crash_rate:.1f}%")
 ```
 
-## Anpassungen
+## Adjustments
 
-### Tolerantere Crash-Detektion (für Training)
+### More Tolerant Crash Detection (For Training)
 ```python
 env = DroneEnv(
-    crash_z_threshold=-10.0,   # Tiefer
-    crash_tilt_threshold=85.0, # Höher
+    crash_z_vel_threshold=-30.0,   # Lower (more negative)
+    crash_tilt_threshold=85.0,     # Higher
 )
 ```
 
-### Strengere Crash-Detektion (für Evaluation)
+### Stricter Crash Detection (For Evaluation)
 ```python
 env = DroneEnv(
-    crash_z_threshold=-3.0,    # Höher
-    crash_tilt_threshold=70.0, # Niedriger
+    crash_z_vel_threshold=-15.0,   # Higher (less negative)
+    crash_tilt_threshold=70.0,     # Lower
 )
 ```
 
-### Nur Z-Coordinate (einfachste Variante)
+### Only Z-Velocity (Simplest Variant)
 ```python
 env = DroneEnv(
-    crash_z_threshold=-5.0,
-    crash_tilt_threshold=180.0,  # Effektiv deaktiviert
+    crash_z_vel_threshold=-20.0,
+    crash_tilt_threshold=180.0,    # Effectively disabled
 )
 ```
 
-## Zukünftige Erweiterungen
+## Future Extensions
 
-Mögliche weitere Crash-Kriterien:
-- [ ] Hohe Z-Velocity (vz < -15 m/s)
-- [ ] Hohe Winkelgeschwindigkeit (außer Kontrolle)
-- [ ] Kollision mit Hindernissen (wenn implementiert)
-- [ ] Timeout ohne Bewegung (festgeklemmt)
+Possible additional crash criteria:
+- [ ] Ground collision (z-position < threshold)
+- [ ] High angular velocity (out of control spinning)
+- [ ] Collision with obstacles (when implemented)
+- [ ] Timeout without movement (stuck/jammed)
 
 ---
 
-**Status:** ✅ Vollständig implementiert und getestet
-**Tests:** 5/5 bestanden
+**Status:** ✅ Fully implemented and tested
+**Tests:** 5/5 passed
 

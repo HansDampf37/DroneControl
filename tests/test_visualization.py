@@ -1,4 +1,4 @@
-"""Test der neuen Visualisierung mit Rotoren und Neigung."""
+"""Test of the new visualization with rotors and tilt."""
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -6,54 +6,54 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import numpy as np
 from src.drone_env import DroneEnv
 
-print("Teste neue Visualisierung mit Rotoren und Neigung...")
-print("Schließe das Fenster mit Ctrl+C\n")
+print("Testing new visualization with rotors and tilt...")
+print("Close the window with Ctrl+C\n")
 
 env = DroneEnv(max_steps=500, render_mode="human")
 obs, info = env.reset(seed=42)
 
-print(f"Ziel: {info['target_position']}")
-print("\nDie Visualisierung zeigt:")
-print("  - Blaues Zentrum: Drohnen-Position")
-print("  - 4 Kreise: Rotoren (Rot=CW, Grün=CCW)")
-print("  - Graue Linien: Verbindungen zu Rotoren (3D → 2D projiziert)")
-print("  - Oranger Pfeil: Neigungsrichtung (Projektion der Normalen)")
-print("  - Info-Box: Inkl. Roll/Pitch/Yaw in Grad")
-print("\nDie Rotor-Arme passen sich an Roll, Pitch UND Yaw an!")
-print("Beobachte wie sich die X-Form verändert bei Neigung.\n")
+print(f"Target: {info['target_position']}")
+print("\nThe visualization shows:")
+print("  - Blue center: Drone position")
+print("  - 4 circles: Rotors (Red=CW, Green=CCW)")
+print("  - Gray lines: Connections to rotors (3D → 2D projected)")
+print("  - Orange arrow: Tilt direction (projection of normal)")
+print("  - Info box: Including Roll/Pitch/Yaw in degrees")
+print("\nThe rotor arms adapt to Roll, Pitch AND Yaw!")
+print("Observe how the X-shape changes with tilt.\n")
 
 try:
     for step in range(500):
-        # Verschiedene Manöver um Neigung zu zeigen
+        # Different maneuvers to show tilt
         if step < 50:
-            # Hover - keine Neigung, symmetrisches X
+            # Hover - no tilt, symmetric X
             action = np.array([0.25, 0.25, 0.25, 0.25])
         elif step < 100:
-            # Starker Roll rechts (Arme kippen nach rechts)
+            # Strong roll right (arms tilt right)
             action = np.array([0.15, 0.35, 0.35, 0.15])
         elif step < 150:
-            # Roll links (Arme kippen nach links)
+            # Roll left (arms tilt left)
             action = np.array([0.35, 0.15, 0.15, 0.35])
         elif step < 200:
-            # Pitch vorwärts (Arme kippen nach vorne)
+            # Pitch forward (arms tilt forward)
             action = np.array([0.15, 0.35, 0.15, 0.35])
         elif step < 250:
-            # Pitch rückwärts (Arme kippen nach hinten)
+            # Pitch backward (arms tilt backward)
             action = np.array([0.35, 0.15, 0.35, 0.15])
         elif step < 350:
-            # Kombiniert: Roll + Pitch (diagonale Neigung)
+            # Combined: Roll + Pitch (diagonal tilt)
             action = np.array([0.15, 0.35, 0.25, 0.25])
         elif step < 400:
-            # Yaw-Rotation bei Hover (X dreht sich)
+            # Yaw rotation while hovering (X rotates)
             action = np.array([0.28, 0.28, 0.22, 0.22])
         else:
-            # Zurück zu Hover
+            # Back to hover
             action = np.array([0.25, 0.25, 0.25, 0.25])
 
         obs, reward, terminated, truncated, info = env.step(action)
         env.render()
 
-        # Info alle 50 Steps
+        # Info every 50 steps
         if (step + 1) % 50 == 0:
             roll_deg = np.rad2deg(obs[6])
             pitch_deg = np.rad2deg(obs[7])
@@ -64,9 +64,9 @@ try:
             break
 
 except KeyboardInterrupt:
-    print("\nTest abgebrochen.")
+    print("\nTest aborted.")
 
 finally:
     env.close()
-    print("\nVisualisierungs-Test abgeschlossen!")
+    print("\nVisualization test completed!")
 

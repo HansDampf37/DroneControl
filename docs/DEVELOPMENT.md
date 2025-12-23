@@ -1,111 +1,115 @@
 # Development Guide
 
-Entwickler-Dokumentation für das Drohnen-RL Environment.
+Developer documentation for the Drone RL Environment.
 
-## Projektstruktur
+## Project Structure
 
 ```
 drone-control/
 │
-├── src/                              # Produktivcode
+├── src/                              # Production code
 │   └── drone_env/
-│       ├── __init__.py               # Exportiert DroneEnv
-│       └── env.py                    # Haupt-Environment (481 Zeilen)
+│       ├── __init__.py               # Exports DroneEnv
+│       ├── drone.py                  # Drone physics model
+│       ├── env.py                    # Main environment
+│       └── renderer.py               # Visualization
 │
-├── tests/                            # Tests & Debugging
+├── tests/                            # Tests & debugging
 │   ├── __init__.py
-│   ├── test_env.py                   # Umfassende Tests (4 Test-Suites)
-│   ├── test_rendering.py             # Rendering-Tests (200 Steps)
-│   ├── test_minimal_render.py        # Minimaler Test (20 Steps)
-│   └── debug_render.py               # Debug-Informationen
+│   ├── test_env.py                   # Comprehensive tests (4 test suites)
+│   ├── test_rendering.py             # Rendering tests (200 steps)
+│   ├── test_minimal_render.py        # Minimal test (20 steps)
+│   └── debug_render.py               # Debug information
 │
-├── examples/                         # Beispiel-Skripte
+├── examples/                         # Example scripts
 │   ├── __init__.py
-│   ├── random_agent.py               # Random/Hover Agent Demo
-│   └── training.py                   # Stable-Baselines3 Training
+│   ├── random_agent.py               # Random/Hover agent demo
+│   └── training.py                   # Ray RLlib training
 │
-├── docs/                             # Dokumentation
-│   ├── DEVELOPMENT.md                # Diese Datei
-│   └── TROUBLESHOOTING.md            # Problemlösungen
+├── docs/                             # Documentation
+│   ├── DEVELOPMENT.md                # This file
+│   ├── TROUBLESHOOTING.md            # Problem solutions
+│   ├── CRASH_DETECTION.md            # Crash detection system
+│   └── VISUALIZATION.md              # Rendering details
 │
-├── setup.py                          # Package-Installation
+├── setup.py                          # Package installation
 ├── requirements.txt                  # Dependencies
-└── README.md                         # Haupt-Dokumentation
+└── README.md                         # Main documentation
 ```
 
-## Installation für Entwicklung
+## Installation for Development
 
-### Editable Mode (empfohlen)
+### Editable Mode (recommended)
 ```bash
-# Änderungen am Code werden sofort wirksam
+# Changes to code take effect immediately
 pip install -e .
 
-# Mit RL-Support
+# With RL support
 pip install -e ".[rl]"
 
-# Mit Entwickler-Tools
+# With developer tools
 pip install -e ".[dev]"
 ```
 
-## Code-Organisation
+## Code Organization
 
-### Design-Prinzipien
+### Design Principles
 
-1. **Trennung von Concerns**
-   - `src/` - Nur Produktivcode
-   - `tests/` - Alle Tests
-   - `examples/` - Nutzer-Beispiele
+1. **Separation of Concerns**
+   - `src/` - Production code only
+   - `tests/` - All tests
+   - `examples/` - User examples
 
-2. **Package-Struktur**
-   - Jedes Verzeichnis hat `__init__.py`
-   - Import via Package-Namen
-   - Installierbar via `setup.py`
+2. **Package Structure**
+   - Each directory has `__init__.py`
+   - Import via package names
+   - Installable via `setup.py`
 
 3. **Imports**
    ```python
-   # In Tests/Beispielen
+   # In tests/examples
    import sys
    from pathlib import Path
    sys.path.insert(0, str(Path(__file__).parent.parent))
    from src.drone_env import DroneEnv
    
-   # Nach Installation
+   # After installation
    from src.drone_env import DroneEnv
    ```
 
-## Tests ausführen
+## Running Tests
 
-### Alle Tests
+### All Tests
 ```bash
-# Umfassende Test-Suite
+# Comprehensive test suite
 python tests/test_env.py
 ```
 
 Output:
-- Test 1: Grundlegende Funktionalität
-- Test 2: Physik-Simulation (Hover, Full-Thrust, Roll)
-- Test 3: Wind-Dynamik
-- Test 4: Reward-Funktion
-- Demo mit Visualisierung (optional)
+- Test 1: Basic functionality
+- Test 2: Physics simulation (hover, full thrust, roll)
+- Test 3: Wind dynamics
+- Test 4: Reward function
+- Demo with visualization (optional)
 
-### Rendering-Tests
+### Rendering Tests
 ```bash
-# Schneller Test (20 Steps)
+# Quick test (20 steps)
 python tests/test_minimal_render.py
 
-# Vollständiger Test (200 Steps mit verschiedenen Actions)
+# Full test (200 steps with various actions)
 python tests/test_rendering.py
 
-# Debug-Informationen (Figure-Tracking)
+# Debug information (figure tracking)
 python tests/debug_render.py
 ```
 
-## Neuen Test hinzufügen
+## Adding a New Test
 
-1. **Datei erstellen** in `tests/`
-2. **Import-Template** verwenden:
+1. **Create file** in `tests/`
+2. **Use import template**:
    ```python
-   """Beschreibung des Tests."""
+   """Description of the test."""
    import sys
    from pathlib import Path
    sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -116,23 +120,23 @@ python tests/debug_render.py
    def test_my_feature():
        env = DroneEnv()
        obs, info = env.reset()
-       # ... Test-Code ...
+       # ... Test code ...
        env.close()
    
    if __name__ == "__main__":
        test_my_feature()
    ```
 
-## Neues Beispiel hinzufügen
+## Adding a New Example
 
-1. **Datei erstellen** in `examples/`
-2. **Import-Struktur** wie bei Tests
-3. **CLI-Argumente** mit `argparse` (optional)
-4. **Dokumentieren** in README.md
+1. **Create file** in `examples/`
+2. **Use import structure** as in tests
+3. **CLI arguments** with `argparse` (optional)
+4. **Document** in README.md
 
-Beispiel:
+Example:
 ```python
-"""Beispiel: Mein Agent."""
+"""Example: My Agent."""
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -142,7 +146,7 @@ from src.drone_env import DroneEnv
 
 def run_my_agent():
     env = DroneEnv(render_mode="human")
-    # ... Agent-Code ...
+    # ... Agent code ...
     env.close()
 
 if __name__ == "__main__":
@@ -152,76 +156,80 @@ if __name__ == "__main__":
     run_my_agent()
 ```
 
-## Environment erweitern
+## Extending the Environment
 
-### Neue Features in DroneEnv
+### Adding New Features to DroneEnv
 
-Editiere `src/drone_env/env.py`:
+Edit `src/drone_env/env.py`:
 
-#### Neue Parameter hinzufügen
+#### Adding New Parameters
 ```python
 def __init__(
     self,
     max_steps: int = 1000,
-    my_new_parameter: float = 1.0,  # NEU
+    my_new_parameter: float = 1.0,  # NEW
     # ...
 ):
     self.my_new_parameter = my_new_parameter
 ```
 
-#### Physik-Parameter ändern
-Zeilen ~45-60:
+#### Changing Physics Parameters
+Lines ~85-95 in DroneEnv.__init__():
+
 ```python
-self.mass = 1.0              # kg
-self.arm_length = 0.25       # m
-self.thrust_coeff = 10.0     # Thrust = coeff * motor_power
-self.torque_coeff = 0.1      # Torque = coeff * motor_power
-self.gravity = 9.81          # m/s^2
+self.drone = Drone(
+    mass=1.0,               # kg
+    arm_length=0.25,        # m
+    thrust_coef=10.0,       # Thrust = coeff * motor_power
+    torque_coef=0.1,        # Torque = coeff * motor_power
+)
+self.gravity = 9.81  # m/s^2
 ```
 
-#### Observation Space modifizieren
-Zeilen ~90-115:
+#### Modifying Observation Space
+Lines ~270-280 in _get_observation():
 ```python
-# Beispiel: Wind aus Observation entfernen
+# Example: Remove wind from observation
 observation = np.concatenate([
-    relative_target,
-    self.velocity,
-    self.orientation,
-    self.angular_velocity,
-    # self.wind_vector,  # <-- Auskommentieren
+    vect_to_target,
+    self.drone.velocity,
+    self.drone.orientation,
+    self.drone.angular_velocity,
+    # self.wind_vector,  # <-- Comment out to remove
 ])
 ```
 
-**Wichtig**: Observation Space Grenzen anpassen!
+**Important**: Adjust observation space bounds in `__init__()` accordingly!
 
-### Reward-Funktion ändern
+### Changing the Reward Function
 
-Zeile ~310:
+Line ~290 in _compute_reward():
 ```python
 def _compute_reward(self) -> float:
-    """Berechnet den Reward."""
-    distance = np.linalg.norm(self.target_position - self.position)
+    """Computes the reward."""
+    distance = np.linalg.norm(self.target_position - self.drone.position)
     
-    # Aktuell: Dense Reward
-    reward = 1.0 / (1.0 + distance)
+    # Current: Dense Reward
+    reward = ((self.max_dist_to_target - distance) / self.max_dist_to_target) ** 2
     
     # Alternative: Sparse Reward
     # reward = 1.0 if distance < 1.0 else 0.0
     
-    # Alternative: Mit Stability-Bonus
-    # stability_penalty = np.linalg.norm(self.angular_velocity)
-    # reward = 1.0 / (1.0 + distance) - 0.1 * stability_penalty
+    # Alternative: With Stability Bonus
+    # stability_penalty = np.linalg.norm(self.drone.angular_velocity)
+    # reward = ((self.max_dist_to_target - distance) / self.max_dist_to_target) ** 2
+    # reward -= 0.1 * stability_penalty
     
     return float(reward)
 ```
 
-## Code-Style
+## Code Style
 
-### Formatierung (optional)
+### Formatting (optional)
 ```bash
 pip install black flake8 mypy
 
-# Formatieren
+# Format code
 black src/ tests/ examples/
 
 # Linting
@@ -231,25 +239,25 @@ flake8 src/ tests/ examples/
 mypy src/
 ```
 
-### Konventionen
-- Docstrings für alle Klassen/Funktionen
-- Type Hints wo möglich
-- Kommentare für komplexe Logik
-- Konstanten in UPPERCASE
+### Conventions
+- Docstrings for all classes/functions
+- Type hints where possible
+- Comments for complex logic
+- Constants in UPPERCASE
 
 ## Debugging
 
-### Print-Debugging
+### Print Debugging
 ```python
-# In env.py, z.B. in step()
+# In env.py, e.g., in step()
 print(f"Action: {action}")
-print(f"Position: {self.position}")
+print(f"Position: {self.drone.position}")
 print(f"Thrust: {thrusts}")
 ```
 
 ### Interactive Debugging
 ```python
-# In deinem Script
+# In your script
 import pdb
 
 env = DroneEnv()
@@ -261,11 +269,11 @@ obs, reward, term, trunc, info = env.step(action)
 
 ### Rendering Debug
 ```bash
-# Zeigt Figure-Nummern, matplotlib State
+# Shows figure numbers, matplotlib state
 python tests/debug_render.py
 ```
 
-## Performance-Optimierung
+## Performance Optimization
 
 ### Profiling
 ```python
@@ -276,7 +284,7 @@ env = DroneEnv()
 profiler = cProfile.Profile()
 
 profiler.enable()
-# ... Code ausführen ...
+# ... Run code ...
 profiler.disable()
 
 stats = pstats.Stats(profiler)
@@ -285,47 +293,47 @@ stats.print_stats(10)
 ```
 
 ### Rendering Performance
-- `render_mode=None` für Training (kein Rendering)
-- Rendering-Frequenz reduzieren: `if step % 10 == 0: env.render()`
+- `render_mode=None` for training (no rendering)
+- Reduce rendering frequency: `if step % 10 == 0: env.render()`
 
-## Versionierung
+## Versioning
 
 ### Git Workflow
 ```bash
 # Feature Branch
 git checkout -b feature/my-new-feature
 
-# Änderungen committen
+# Commit changes
 git add src/drone_env/env.py
-git commit -m "Add: Neue Feature-Beschreibung"
+git commit -m "Add: New feature description"
 
-# Pushen
+# Push
 git push origin feature/my-new-feature
 ```
 
 ### Semantic Versioning
-- `MAJOR.MINOR.PATCH` (z.B. 0.1.0)
+- `MAJOR.MINOR.PATCH` (e.g., 0.1.0)
 - MAJOR: Breaking Changes
-- MINOR: Neue Features (backwards compatible)
+- MINOR: New Features (backwards compatible)
 - PATCH: Bug Fixes
 
-Aktualisiere in:
+Update in:
 - `src/drone_env/__init__.py`
 - `setup.py`
 
 ## Dependency Management
 
-### requirements.txt aktualisieren
+### Updating requirements.txt
 ```bash
-# Nach neuen pip install:
+# After new pip install:
 pip freeze > requirements.txt
 
-# Oder manuell editieren (empfohlen):
-# Nur direkte Dependencies mit Version-Ranges
+# Or edit manually (recommended):
+# Only direct dependencies with version ranges
 ```
 
-### setup.py aktualisieren
-Editiere `install_requires` für neue Dependencies:
+### Updating setup.py
+Edit `install_requires` for new dependencies:
 ```python
 install_requires=[
     "gymnasium>=0.29.0",
@@ -336,9 +344,9 @@ install_requires=[
 ],
 ```
 
-## Continuous Integration (zukünftig)
+## Continuous Integration (future)
 
-### GitHub Actions Beispiel
+### GitHub Actions Example
 ```yaml
 # .github/workflows/tests.yml
 name: Tests
@@ -357,39 +365,54 @@ jobs:
       - run: python tests/test_env.py
 ```
 
-## Häufige Entwickler-Aufgaben
+## Common Developer Tasks
 
-### Environment zurücksetzen zu Defaults
+### Reset Environment to Defaults
 ```python
-env = DroneEnv()  # Nutzt alle Default-Werte
+env = DroneEnv()  # Uses all default values
 ```
 
-### Deterministische Episoden
+### Deterministic Episodes
 ```python
-env.reset(seed=42)  # Gleiche Startbedingungen
+env.reset(seed=42)  # Same starting conditions
 ```
 
-### Custom Zielpunkt setzen
+### Set Custom Target Point
 ```python
 env.reset()
 env.target_position = np.array([10.0, 5.0, 0.0])
 ```
 
-### Physik-Parameter zur Laufzeit ändern
+### Change Physics Parameters at Runtime
+
 ```python
 env = DroneEnv()
-env.mass = 1.5  # Schwerere Drohne
-env.thrust_coeff = 12.0  # Stärkere Motoren
+env.drone.mass = 1.5  # Heavier drone
+env.drone.thrust_coef = 12.0  # Stronger motors
 ```
 
-## Kontakt & Contribution
+## Contact & Contribution
 
-Bei Fragen oder Vorschlägen:
-- Issues erstellen im GitHub Repository
-- Pull Requests willkommen!
+For questions or suggestions:
+- Create issues in the GitHub repository
+- Pull requests are welcome!
+- Follow the code style guidelines
+- Add tests for new features
+- Update documentation
 
-## Siehe auch
+### Contribution Guidelines
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes
+4. Run tests (`python tests/test_env.py`)
+5. Commit your changes (`git commit -m 'Add: Amazing feature'`)
+6. Push to the branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
 
-- [README.md](../README.md) - Haupt-Dokumentation
-- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Problemlösungen
+## See Also
+
+- [README.md](../README.md) - Main documentation
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Common issues and solutions
+- [CRASH_DETECTION.md](CRASH_DETECTION.md) - Crash detection system details
+- [VISUALIZATION.md](VISUALIZATION.md) - Rendering and visualization guide
 

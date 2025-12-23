@@ -1,2 +1,2 @@
-"""Tests für das Drohnen-Environment."""
+"""Tests for the Drone Environment."""
 

@@ -1,4 +1,4 @@
-"""Drohnen-RL Environment Package."""
+"""Drone RL Environment Package."""
 from .env import DroneEnv
 from .renderer import DroneEnvRenderer
 from .drone import Drone
@@ -6,24 +6,25 @@ from .drone import Drone
 
 class RLlibDroneEnv(DroneEnv):
     """
-    RLlib-kompatibler Wrapper für DroneEnv.
+    RLlib-compatible wrapper for DroneEnv.
 
-    RLlib ruft Environments mit EnvClass(env_config) auf,
-    aber DroneEnv erwartet benannte Parameter (**kwargs).
-    Dieser Wrapper übersetzt das env_config Dictionary in kwargs.
+    RLlib calls environments with EnvClass(env_config), but DroneEnv
+    expects named parameters (**kwargs). This wrapper translates
+    the env_config dictionary into kwargs.
     """
 
     def __init__(self, config=None):
         """
-        Initialisiert das Environment mit RLlib's env_config.
+        Initializes the environment with RLlib's env_config.
 
         Args:
-            config: Dictionary mit Environment-Konfiguration von RLlib
+            config: Dictionary with environment configuration from RLlib.
+                If None, default configuration is used.
         """
         if config is None:
             config = {}
 
-        # Extrahiere Parameter aus config oder verwende Defaults
+        # Extract parameters from config or use defaults
         max_steps = config.get("max_steps", 1000)
         dt = config.get("dt", 0.01)
         target_change_interval = config.get("target_change_interval", None)
@@ -33,7 +34,7 @@ class RLlibDroneEnv(DroneEnv):
         crash_z_vel_threshold = config.get("crash_z_vel_threshold", -20.0)
         crash_tilt_threshold = config.get("crash_tilt_threshold", 80.0)
 
-        # Rufe Parent-Konstruktor mit benannten Parametern auf
+        # Call parent constructor with named parameters
         super().__init__(
             max_steps=max_steps,
             dt=dt,

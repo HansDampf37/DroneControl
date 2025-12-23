@@ -1,9 +1,9 @@
 """
-Renderer für das DroneEnv - Visualisierung der Drohne und des Ziels.
+Renderer for DroneEnv - Visualization of drone and target.
 """
 import numpy as np
 import matplotlib
-matplotlib.use('TkAgg')  # Backend explizit setzen für stabiles Rendering
+matplotlib.use('TkAgg')  # Explicitly set backend for stable rendering
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 from typing import Optional
@@ -11,28 +11,31 @@ from typing import Optional
 
 class DroneEnvRenderer:
     """
-    Renderer-Klasse für DroneEnv.
+    Renderer class for DroneEnv.
 
-    Visualisiert die Drohne in zwei Ansichten:
-    - Top View (Draufsicht XY-Ebene)
-    - Front View (Vorderansicht XZ-Ebene)
+    Visualizes the drone in two views:
+    - Top View (bird's eye view of XY plane)
+    - Front View (side view of XZ plane)
     """
 
     def __init__(self, render_mode: Optional[str] = None):
         """
-        Initialisiert den Renderer.
+        Initializes the renderer.
 
         Args:
-            render_mode: "human" für interaktive Anzeige, "rgb_array" für Array-Output
+            render_mode: Rendering mode. Options:
+                - "human": Interactive display for visualization
+                - "rgb_array": Returns RGB array for video recording
+                - None: No rendering
         """
         self.render_mode = render_mode
 
-        # Matplotlib Komponenten
+        # Matplotlib components
         self.fig = None
         self.ax_top = None
         self.ax_front = None
 
-        # Rendering-Objekte für Performance (werden wiederverwendet)
+        # Rendering objects for performance (reused across frames)
         self._render_objects = {
             'drone_circle_top': None,
             'drone_circle_front': None,
@@ -50,24 +53,24 @@ class DroneEnvRenderer:
             'connection_line_front': None,
             'wind_arrow': None,
             'info_text': None,
-            'boden_line': None,
+            'ground_line': None,
         }
 
     def initialize(self):
-        """Initialisiert die Rendering-Komponenten beim ersten Aufruf."""
+        """Initializes rendering components on first call."""
         if self.render_mode is None:
             return
 
-        # Für human mode: interaktiver Modus
+        # For human mode: interactive mode
         if self.render_mode == "human":
             plt.ion()
 
-        # 2 Subplots: Oben Draufsicht (XY), Unten Vorderansicht (XZ)
+        # 2 Subplots: Top view (XY), Bottom front view (XZ)
         self.fig, (self.ax_top, self.ax_front) = plt.subplots(2, 1, figsize=(10, 14))
         self.fig.set_facecolor('white')
         self.fig.subplots_adjust(hspace=0.3)
 
-        # ========== TOP VIEW (Draufsicht XY) ==========
+        # ========== TOP VIEW (Bird's eye view XY) ==========
         self.ax_top.set_xlim(-30, 30)
         self.ax_top.set_ylim(-30, 30)
         self.ax_top.set_aspect('equal')
@@ -76,19 +79,19 @@ class DroneEnvRenderer:
         self.ax_top.set_ylabel('Y (m)', fontsize=11)
         self.ax_top.set_facecolor('#f0f0f0')
 
-        # ========== FRONT VIEW (Vorderansicht XZ) ==========
+        # ========== FRONT VIEW (Side view XZ) ==========
         self.ax_front.set_xlim(-30, 30)
         self.ax_front.set_ylim(-30, 30)
         self.ax_front.set_aspect('equal')
         self.ax_front.grid(True, alpha=0.4, linestyle='--', linewidth=0.5)
         self.ax_front.set_xlabel('X (m)', fontsize=11)
-        self.ax_front.set_ylabel('Z (Höhe) (m)', fontsize=11)
-        self.ax_front.set_title('Vorderansicht (Front View)', fontsize=12, fontweight='bold')
+        self.ax_front.set_ylabel('Z (Height) (m)', fontsize=11)
+        self.ax_front.set_title('Front View', fontsize=12, fontweight='bold')
         self.ax_front.set_facecolor('#f0f0f0')
 
-        # Boden-Linie in Front-View
-        self._render_objects['boden_line'] = self.ax_front.axhline(
-            y=0, color='brown', linestyle='-', linewidth=2, alpha=0.5, label='Boden'
+        # Ground line in front view
+        self._render_objects['ground_line'] = self.ax_front.axhline(
+            y=0, color='brown', linestyle='-', linewidth=2, alpha=0.5, label='Ground'
         )
 
     def render(
@@ -105,64 +108,64 @@ class DroneEnvRenderer:
         reward: float
     ):
         """
-        Rendert die aktuelle Szene.
+        Renders the current scene.
 
         Args:
-            position: Position der Drohne [x, y, z]
-            velocity: Geschwindigkeit der Drohne [vx, vy, vz]
-            orientation: Orientierung der Drohne [roll, pitch, yaw]
-            angular_velocity: Winkelgeschwindigkeit [wx, wy, wz]
-            target_position: Position des Ziels [x, y, z]
-            wind_vector: Windvektor [wx, wy, wz]
-            rotation_matrix: 3x3 Rotationsmatrix Body->World
-            rotor_positions: Nx3 Array mit Rotor-Positionen im Body-Frame
-            step_count: Aktuelle Schrittzahl
-            reward: Aktueller Reward-Wert
+            position: Drone position [x, y, z] in meters.
+            velocity: Drone velocity [vx, vy, vz] in m/s.
+            orientation: Drone orientation [roll, pitch, yaw] in radians.
+            angular_velocity: Angular velocity [wx, wy, wz] in rad/s.
+            target_position: Target position [x, y, z] in meters.
+            wind_vector: Wind velocity [wx, wy, wz] in m/s.
+            rotation_matrix: 3x3 rotation matrix from body-frame to world-frame.
+            rotor_positions: Nx3 array of rotor positions in body-frame.
+            step_count: Current step number in the episode.
+            reward: Current reward value.
 
         Returns:
-            RGB array wenn render_mode="rgb_array", sonst None
+            RGB array if render_mode is "rgb_array", None otherwise.
         """
         if self.render_mode is None:
             return None
 
-        # Erstelle Figure beim ersten Aufruf
+        # Create figure on first call
         first_render = self.fig is None
         if first_render:
             self.initialize()
 
-        # Update Titel
-        self.ax_top.set_title(f'Draufsicht (Top View) - Step: {step_count}', fontsize=12, fontweight='bold')
+        # Update title
+        self.ax_top.set_title(f'Top View - Step: {step_count}', fontsize=12, fontweight='bold')
 
-        # ========== DROHNE ZEICHNEN ==========
+        # ========== DRAW DRONE ==========
         self._render_drone(position, first_render)
 
-        # ========== ROTOREN ZEICHNEN ==========
+        # ========== DRAW ROTORS ==========
         self._render_rotors(position, rotation_matrix, rotor_positions, first_render)
 
-        # ========== NEIGUNG/ORIENTIERUNG ==========
+        # ========== DRAW TILT/ORIENTATION ==========
         self._render_orientation(position, rotation_matrix, first_render)
 
-        # ========== ZIELPUNKT ==========
+        # ========== DRAW TARGET ==========
         self._render_target(position, target_position, first_render)
 
-        # ========== WIND-VEKTOR ==========
+        # ========== DRAW WIND VECTOR ==========
         self._render_wind(wind_vector, first_render)
 
-        # ========== INFO-BOX ==========
+        # ========== DRAW INFO BOX ==========
         self._render_info(
             position, velocity, orientation, target_position,
             wind_vector, step_count, reward
         )
 
-        # Legenden nur beim ersten Render
+        # Legends only on first render
         if first_render:
             self.ax_top.legend(loc='upper right', fontsize=9)
             self.ax_front.legend(loc='upper right', fontsize=9)
 
-        # Rendering durchführen
+        # Perform rendering
         if self.render_mode == "human":
             plt.draw()
-            plt.pause(0.01)  # Pause für GUI-Update
+            plt.pause(0.01)  # Pause for GUI update
             return None
         elif self.render_mode == "rgb_array":
             self.fig.canvas.draw()
@@ -172,7 +175,7 @@ class DroneEnvRenderer:
             return image
 
     def _render_drone(self, position: np.ndarray, first_render: bool):
-        """Rendert den Drohnen-Körper."""
+        """Renders the drone body."""
         # TOP VIEW
         if first_render:
             self._render_objects['drone_circle_top'] = Circle(
@@ -181,7 +184,7 @@ class DroneEnvRenderer:
                 color='#0066cc',
                 alpha=0.9,
                 zorder=5,
-                label='Drohne'
+                label='Drone'
             )
             self.ax_top.add_patch(self._render_objects['drone_circle_top'])
         else:
@@ -195,7 +198,7 @@ class DroneEnvRenderer:
                 color='#0066cc',
                 alpha=0.9,
                 zorder=5,
-                label='Drohne'
+                label='Drone'
             )
             self.ax_front.add_patch(self._render_objects['drone_circle_front'])
         else:
@@ -208,11 +211,11 @@ class DroneEnvRenderer:
         rotor_positions: np.ndarray,
         first_render: bool
     ):
-        """Rendert die Rotoren der Drohne."""
-        rotor_colors = ['#ff6666', '#ff6666', '#66ff66', '#66ff66']  # Rot: CW, Grün: CCW
-        rotor_scale = 3.0  # Skalierung für bessere Visualisierung
+        """Renders the drone's rotors."""
+        rotor_colors = ['#ff6666', '#ff6666', '#66ff66', '#66ff66']  # Red: CW, Green: CCW
+        rotor_scale = 3.0  # Scaling for better visualization
 
-        # Initialisiere Listen beim ersten Render
+        # Initialize lists on first render
         if first_render:
             self._render_objects['rotor_lines_top'] = []
             self._render_objects['rotor_lines_front'] = []
@@ -220,16 +223,16 @@ class DroneEnvRenderer:
             self._render_objects['rotor_circles_front'] = []
 
         for i, (rotor_pos_body, color) in enumerate(zip(rotor_positions, rotor_colors)):
-            # Transformiere Rotor-Position von Body-Frame zu World-Frame
+            # Transform rotor position from body-frame to world-frame
             rotor_pos_world = rotation_matrix @ rotor_pos_body
             rotor_pos_world_scaled = rotor_pos_world * rotor_scale
 
-            # World-Koordinaten der Rotoren
+            # World coordinates of rotors
             rotor_x = position[0] + rotor_pos_world_scaled[0]
             rotor_y = position[1] + rotor_pos_world_scaled[1]
             rotor_z = position[2] + rotor_pos_world_scaled[2]
 
-            # --- TOP VIEW: Rotoren in XY-Ebene ---
+            # --- TOP VIEW: Rotors in XY plane ---
             if first_render:
                 line_top, = self.ax_top.plot(
                     [position[0], rotor_x],
@@ -257,7 +260,7 @@ class DroneEnvRenderer:
                 )
                 self._render_objects['rotor_circles_top'][i].center = (rotor_x, rotor_y)
 
-            # --- FRONT VIEW: Rotoren in XZ-Ebene ---
+            # --- FRONT VIEW: Rotors in XZ plane ---
             if first_render:
                 line_front, = self.ax_front.plot(
                     [position[0], rotor_x],
@@ -291,17 +294,17 @@ class DroneEnvRenderer:
         rotation_matrix: np.ndarray,
         first_render: bool
     ):
-        """Rendert die Orientierung/Neigung der Drohne."""
-        # Normale der Drohne (zeigt nach "oben" im Body-Frame)
+        """Renders the drone's orientation/tilt."""
+        # Normal vector of the drone (points "up" in body-frame)
         normal_body = np.array([0, 0, 1])
         normal_world = rotation_matrix @ normal_body
 
-        # --- TOP VIEW: Projektion der Neigung auf XY-Ebene ---
+        # --- TOP VIEW: Projection of tilt onto XY plane ---
         tilt_x = normal_world[0]
         tilt_y = normal_world[1]
         tilt_magnitude = np.sqrt(tilt_x**2 + tilt_y**2)
 
-        # Entferne alte Pfeile falls vorhanden
+        # Remove old arrow if present
         if self._render_objects['tilt_arrow_top'] is not None:
             self._render_objects['tilt_arrow_top'].remove()
             self._render_objects['tilt_arrow_top'] = None
@@ -318,14 +321,14 @@ class DroneEnvRenderer:
                 linewidth=2.5,
                 zorder=7,
                 alpha=0.9,
-                label='Neigung' if first_render else ''
+                label='Tilt' if first_render else ''
             )
 
-        # --- FRONT VIEW: Neigung in XZ-Ebene ---
+        # --- FRONT VIEW: Tilt in XZ plane ---
         tilt_x_front = normal_world[0]
         tilt_z_front = normal_world[2]
 
-        # Entferne alten Pfeil falls vorhanden
+        # Remove old arrow if present
         if self._render_objects['tilt_arrow_front'] is not None:
             self._render_objects['tilt_arrow_front'].remove()
             self._render_objects['tilt_arrow_front'] = None
@@ -342,7 +345,7 @@ class DroneEnvRenderer:
                 linewidth=2.5,
                 zorder=7,
                 alpha=0.9,
-                label='Neigung' if first_render else ''
+                label='Tilt' if first_render else ''
             )
 
     def _render_target(
@@ -351,8 +354,8 @@ class DroneEnvRenderer:
         target_position: np.ndarray,
         first_render: bool
     ):
-        """Rendert den Zielpunkt."""
-        # --- TOP VIEW: Ziel in XY-Ebene ---
+        """Renders the target point."""
+        # --- TOP VIEW: Target in XY plane ---
         if first_render:
             self._render_objects['target_circle_top'] = Circle(
                 (target_position[0], target_position[1]),
@@ -360,11 +363,11 @@ class DroneEnvRenderer:
                 color='#00cc00',
                 alpha=0.6,
                 zorder=4,
-                label='Ziel'
+                label='Target'
             )
             self.ax_top.add_patch(self._render_objects['target_circle_top'])
 
-            # Ziel-Kreuz (Top View)
+            # Target crosshair (Top View)
             cross_size = 0.5
             line1, = self.ax_top.plot(
                 [target_position[0] - cross_size, target_position[0] + cross_size],
@@ -378,7 +381,7 @@ class DroneEnvRenderer:
             )
             self._render_objects['target_cross_top'] = [line1, line2]
 
-            # Verbindungslinie zur Drohne (Top View)
+            # Connection line to drone (Top View)
             self._render_objects['connection_line_top'], = self.ax_top.plot(
                 [position[0], target_position[0]],
                 [position[1], target_position[1]],
@@ -388,7 +391,7 @@ class DroneEnvRenderer:
                 zorder=1
             )
         else:
-            # Update Positionen
+            # Update positions
             self._render_objects['target_circle_top'].center = (target_position[0], target_position[1])
 
             cross_size = 0.5
@@ -406,7 +409,7 @@ class DroneEnvRenderer:
                 [position[1], target_position[1]]
             )
 
-        # --- FRONT VIEW: Ziel in XZ-Ebene ---
+        # --- FRONT VIEW: Target in XZ plane ---
         if first_render:
             self._render_objects['target_circle_front'] = Circle(
                 (target_position[0], target_position[2]),
@@ -414,11 +417,11 @@ class DroneEnvRenderer:
                 color='#00cc00',
                 alpha=0.6,
                 zorder=4,
-                label='Ziel'
+                label='Target'
             )
             self.ax_front.add_patch(self._render_objects['target_circle_front'])
 
-            # Ziel-Kreuz (Front View)
+            # Target crosshair (Front View)
             cross_size = 0.5
             line1, = self.ax_front.plot(
                 [target_position[0] - cross_size, target_position[0] + cross_size],
@@ -432,7 +435,7 @@ class DroneEnvRenderer:
             )
             self._render_objects['target_cross_front'] = [line1, line2]
 
-            # Verbindungslinie zur Drohne (Front View)
+            # Connection line to drone (Front View)
             self._render_objects['connection_line_front'], = self.ax_front.plot(
                 [position[0], target_position[0]],
                 [position[2], target_position[2]],
@@ -442,7 +445,7 @@ class DroneEnvRenderer:
                 zorder=1
             )
         else:
-            # Update Positionen
+            # Update positions
             self._render_objects['target_circle_front'].center = (target_position[0], target_position[2])
 
             cross_size = 0.5
@@ -461,18 +464,18 @@ class DroneEnvRenderer:
             )
 
     def _render_wind(self, wind_vector: np.ndarray, first_render: bool):
-        """Rendert den Wind-Vektor."""
+        """Renders the wind vector."""
         wind_scale = 3.0
         wind_x = wind_vector[0] * wind_scale
         wind_y = wind_vector[1] * wind_scale
         wind_mag = np.linalg.norm([wind_x, wind_y])
 
-        # Entferne alten Wind-Pfeil falls vorhanden
+        # Remove old wind arrow if present
         if self._render_objects['wind_arrow'] is not None:
             self._render_objects['wind_arrow'].remove()
             self._render_objects['wind_arrow'] = None
 
-        if wind_mag > 0.1:  # Nur zeichnen wenn Wind spürbar
+        if wind_mag > 0.1:  # Only draw if wind is noticeable
             self._render_objects['wind_arrow'] = self.ax_top.arrow(
                 -25, 25,
                 wind_x, wind_y,
@@ -496,20 +499,20 @@ class DroneEnvRenderer:
         step_count: int,
         reward: float
     ):
-        """Rendert die Info-Box mit Statusdaten."""
+        """Renders the info box with status data."""
         distance = np.linalg.norm(target_position - position)
         velocity_mag = np.linalg.norm(velocity)
         wind_mag_full = np.linalg.norm(wind_vector)
 
-        # Konvertiere Winkel zu Grad
+        # Convert angles to degrees
         roll_deg = np.rad2deg(orientation[0])
         pitch_deg = np.rad2deg(orientation[1])
         yaw_deg = np.rad2deg(orientation[2])
 
         info_text = f'Step: {step_count}\n'
-        info_text += f'Distanz: {distance:.2f}m\n'
-        info_text += f'Höhe: {position[2]:.2f}m\n'
-        info_text += f'Geschw.: {velocity_mag:.2f}m/s\n'
+        info_text += f'Distance: {distance:.2f}m\n'
+        info_text += f'Height: {position[2]:.2f}m\n'
+        info_text += f'Velocity: {velocity_mag:.2f}m/s\n'
         info_text += f'Wind: {wind_mag_full:.2f}m/s\n'
         info_text += f'Roll: {roll_deg:.1f}°\n'
         info_text += f'Pitch: {pitch_deg:.1f}°\n'
@@ -532,12 +535,12 @@ class DroneEnvRenderer:
             self._render_objects['info_text'].set_text(info_text)
 
     def close(self):
-        """Räumt Rendering-Ressourcen auf."""
+        """Cleans up rendering resources."""
         if self.fig is not None:
             plt.close(self.fig)
             self.fig = None
             self.ax_top = None
             self.ax_front = None
         if self.render_mode == "human":
-            plt.ioff()  # Interaktiven Modus beenden
+            plt.ioff()  # Exit interactive mode
 

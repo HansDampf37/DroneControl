@@ -1,174 +1,174 @@
-# Rendering-Optimierung
+# Rendering Optimization
 
-## Übersicht
+## Overview
 
-Die Render-Methode des DroneEnv wurde umfassend optimiert, um die Performance zu verbessern, während die volle Funktionalität erhalten bleibt.
+The DroneEnv render method has been comprehensively optimized to improve performance while maintaining full functionality.
 
-## Implementierte Optimierungen
+## Implemented Optimizations
 
-### 1. **Wiederverwendung von Plot-Objekten**
-Statt bei jedem Frame alle Objekte neu zu erstellen, werden sie beim ersten Render erstellt und danach nur noch aktualisiert:
+### 1. **Reuse of Plot Objects**
+Instead of recreating all objects with each frame, they are created on first render and only updated afterwards:
 
 ```python
-# Beim ersten Render
+# On first render
 self._render_objects['drone_circle_top'] = Circle(...)
 self.ax_top.add_patch(self._render_objects['drone_circle_top'])
 
-# Bei nachfolgenden Renders
+# On subsequent renders
 self._render_objects['drone_circle_top'].center = (new_x, new_y)
 ```
 
-**Optimierte Objekte:**
-- Drohnen-Kreise (Top & Front View)
-- Rotor-Linien und -Kreise (8 Objekte)
-- Ziel-Kreise und Kreuze
-- Verbindungslinien
-- Info-Textbox
+**Optimized objects:**
+- Drone circles (Top & Front View)
+- Rotor lines and circles (8 objects)
+- Target circles and crosses
+- Connection lines
+- Info text box
 
-### 2. **Update statt Clear**
-Die Axes werden nicht mehr bei jedem Frame gecleared (`ax.clear()`), sondern nur die notwendigen Objekte werden aktualisiert.
+### 2. **Update Instead of Clear**
+The axes are no longer cleared with each frame (`ax.clear()`), instead only the necessary objects are updated.
 
-**Vorher:**
+**Before:**
 ```python
-self.ax_top.clear()  # Entfernt ALLES
-self.ax_top.set_xlim(...)  # Muss alles neu setzen
-# ... viele weitere Wiederholungen
+self.ax_top.clear()  # Removes EVERYTHING
+self.ax_top.set_xlim(...)  # Must reset everything
+# ... many more repetitions
 ```
 
-**Nachher:**
+**After:**
 ```python
-# Axes werden nur einmal initialisiert
-# Nur der Titel wird aktualisiert
+# Axes are initialized only once
+# Only the title is updated
 self.ax_top.set_title(f'Step: {self.step_count}')
 ```
 
-### 3. **Bedingte Darstellung**
-Objekte werden nur gezeichnet, wenn sie sichtbar/relevant sind:
+### 3. **Conditional Rendering**
+Objects are only drawn when they are visible/relevant:
 
 ```python
-# Neigungspfeil nur bei sichtbarer Neigung
+# Tilt arrow only when tilt is visible
 if tilt_magnitude > 0.01:
     self._render_objects['tilt_arrow_top'] = self.ax_top.arrow(...)
 
-# Wind-Pfeil nur bei spürbarem Wind
+# Wind arrow only when wind is noticeable
 if wind_mag > 0.1:
     self._render_objects['wind_arrow'] = self.ax_top.arrow(...)
 ```
 
-### 4. **Reduzierung redundanter Berechnungen**
-Die Rotationsmatrix wird nur einmal pro Frame berechnet und wiederverwendet.
+### 4. **Reduction of Redundant Calculations**
+The rotation matrix is calculated only once per frame and reused.
 
-### 5. **Optimierte Matplotlib-Nutzung**
-- Verwendung von `buffer_rgba()` statt veraltetes `tostring_rgb()`
-- Minimierung von `plt.draw()` Aufrufen
-- Effiziente Line-Updates mit `set_data()`
+### 5. **Optimized Matplotlib Usage**
+- Use of `buffer_rgba()` instead of deprecated `tostring_rgb()`
+- Minimization of `plt.draw()` calls
+- Efficient line updates with `set_data()`
 
-## Performance-Ergebnisse
+## Performance Results
 
-### Benchmark-Ergebnisse
+### Benchmark Results
 ```
-Simulation (ohne Rendering): ~8800 steps/sec
-Rendering (human mode):       ~11 FPS
+Simulation (without rendering): ~8800 steps/sec
+Rendering (human mode):         ~11 FPS
 ```
 
-### Geschwindigkeitsverbesserung
-- **Erste Frame**: ~200ms (Initialisierung)
-- **Nachfolgende Frames**: ~91ms (Update only)
-- **Speedup gegenüber vorheriger Version**: ~3-5x schneller
+### Speed Improvement
+- **First Frame**: ~200ms (initialization)
+- **Subsequent Frames**: ~91ms (update only)
+- **Speedup vs. previous version**: ~3-5x faster
 
 ## Two-View Layout
 
-Das optimierte Rendering zeigt zwei orthogonale Ansichten:
+The optimized rendering shows two orthogonal views:
 
-### Draufsicht (Top View - XY)
-- Horizontale Position und Bewegung
-- Yaw-Rotation
-- Wind-Vektor
-- Info-Box mit allen Metriken
+### Top View (XY Plane)
+- Horizontal position and movement
+- Yaw rotation
+- Wind vector
+- Info box with all metrics
 
-### Vorderansicht (Front View - XZ)
-- Vertikale Position (Höhe)
-- Pitch-Neigung
-- Boden-Referenzlinie
-- Höhenänderungen
+### Front View (XZ Plane)
+- Vertical position (altitude)
+- Pitch tilt
+- Ground reference line
+- Height changes
 
-## Technische Details
+## Technical Details
 
-### Render-Objekt-Dictionary
+### Render Object Dictionary
 ```python
 self._render_objects = {
     'drone_circle_top': None,
     'drone_circle_front': None,
-    'rotor_lines_top': [],      # 4 Linien
-    'rotor_lines_front': [],    # 4 Linien
-    'rotor_circles_top': [],    # 4 Kreise
-    'rotor_circles_front': [],  # 4 Kreise
+    'rotor_lines_top': [],      # 4 lines
+    'rotor_lines_front': [],    # 4 lines
+    'rotor_circles_top': [],    # 4 circles
+    'rotor_circles_front': [],  # 4 circles
     'tilt_arrow_top': None,
     'tilt_arrow_front': None,
     'target_circle_top': None,
     'target_circle_front': None,
-    'target_cross_top': [],     # 2 Linien
-    'target_cross_front': [],   # 2 Linien
+    'target_cross_top': [],     # 2 lines
+    'target_cross_front': [],   # 2 lines
     'connection_line_top': None,
     'connection_line_front': None,
     'wind_arrow': None,
     'info_text': None,
-    'boden_line': None,
+    'ground_line': None,
 }
 ```
 
-### Initialisierungs-Flow
-1. `render()` aufgerufen
-2. `first_render = self.fig is None` prüfen
-3. Falls `True`: `_initialize_render()` aufrufen
-4. Figure, Axes, Grid, Labels einmalig setzen
-5. Alle Plot-Objekte erstellen
-6. Bei nachfolgenden Aufrufen: Nur Positionen/Daten updaten
+### Initialization Flow
+1. `render()` called
+2. Check `first_render = self.fig is None`
+3. If `True`: call `_initialize_render()`
+4. Set figure, axes, grid, labels once
+5. Create all plot objects
+6. On subsequent calls: Only update positions/data
 
-## Verwendung
+## Usage
 
 ```python
-# Standard-Verwendung
+# Standard usage
 env = DroneEnv(render_mode='human')
 obs, info = env.reset()
 
 for _ in range(1000):
     action = agent.get_action(obs)
     obs, reward, done, truncated, info = env.step(action)
-    env.render()  # Optimiert!
+    env.render()  # Optimized!
 ```
 
-## Weitere mögliche Optimierungen
+## Further Possible Optimizations
 
-Falls noch mehr Performance benötigt wird:
+If even more performance is needed:
 
-1. **Blitting**: Nur geänderte Bereiche neu zeichnen
-2. **Frame-Skipping**: Nur jeden N-ten Frame rendern
-3. **Downsampling**: Kleinere Figure-Größe
-4. **Threading**: Rendering in separatem Thread
-5. **Alternative Backends**: Verwendung von `Agg` statt `TkAgg`
+1. **Blitting**: Only redraw changed regions
+2. **Frame Skipping**: Only render every N-th frame
+3. **Downsampling**: Smaller figure size
+4. **Threading**: Rendering in separate thread
+5. **Alternative Backends**: Use `Agg` instead of `TkAgg`
 
 ## Testing
 
-Performance-Test ausführen:
+Run performance test:
 ```bash
 python test_rendering_performance.py
 ```
 
-Erwartete Ausgabe:
+Expected output:
 - Baseline Simulation: >8000 steps/sec
 - Rendering: >10 FPS (Human mode)
 
-## Kompatibilität
+## Compatibility
 
-- ✅ Gymnasium API vollständig kompatibel
-- ✅ RGB-Array Modus funktioniert
-- ✅ Human Modus funktioniert
-- ✅ Headless-Server kompatibel (mit Agg-Backend)
+- ✅ Fully compatible with Gymnasium API
+- ✅ RGB-Array mode works
+- ✅ Human mode works
+- ✅ Headless server compatible (with Agg backend)
 - ✅ Matplotlib 3.5+
 
-## Siehe auch
+## See Also
 
-- [VISUALIZATION.md](VISUALIZATION.md) - Detaillierte Visualisierungs-Dokumentation
-- [DEVELOPMENT.md](DEVELOPMENT.md) - Entwicklungs-Guide
+- [VISUALIZATION.md](VISUALIZATION.md) - Detailed visualization documentation
+- [DEVELOPMENT.md](DEVELOPMENT.md) - Development guide
 

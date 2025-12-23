@@ -1,4 +1,4 @@
-"""Test der Crash-Detektion."""
+"""Test for crash detection system."""
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -8,25 +8,25 @@ from src.drone_env import DroneEnv
 
 
 def test_crash_z_threshold():
-    """Test: Crash durch zu niedrige Z-Koordinate."""
+    """Test: Crash detection by low z-coordinate threshold."""
     print("=" * 60)
-    print("Test 1: Crash bei niedriger Z-Koordinate")
+    print("Test 1: Crash at low Z-coordinate")
     print("=" * 60)
 
     env = DroneEnv(
         max_steps=1000,
         enable_crash_detection=True,
-        crash_z_threshold=-5.0,
+        crash_z_vel_threshold=-5.0,
         render_mode=None
     )
 
     obs, info = env.reset(seed=42)
-    print(f"Start-Position: {info['position']}")
+    print(f"Start position: {info['position']}")
 
-    # Lasse die Drohne fallen (kein Thrust)
+    # Let the drone fall (no thrust)
     crashed = False
     for step in range(200):
-        action = np.array([0.0, 0.0, 0.0, 0.0])  # Kein Thrust
+        action = np.array([0.0, 0.0, 0.0, 0.0])  # No thrust
         obs, reward, terminated, truncated, info = env.step(action)
 
         if step % 20 == 0:
@@ -34,11 +34,11 @@ def test_crash_z_threshold():
 
         if terminated:
             crashed = True
-            print(f"\n✓ Crash detektiert bei Step {step}, Z={info['position'][2]:.2f}m")
+            print(f"\n✓ Crash detected at step {step}, Z={info['position'][2]:.2f}m")
             break
 
     if not crashed:
-        print(f"\n✗ Kein Crash detektiert! Finale Z-Position: {info['position'][2]:.2f}m")
+        print(f"\n✗ No crash detected! Final Z-position: {info['position'][2]:.2f}m")
 
     env.close()
     print()
@@ -46,26 +46,26 @@ def test_crash_z_threshold():
 
 
 def test_crash_tilt():
-    """Test: Crash durch extreme Neigung."""
+    """Test: Crash detection by extreme tilt angle."""
     print("=" * 60)
-    print("Test 2: Crash bei extremer Neigung")
+    print("Test 2: Crash at extreme tilt")
     print("=" * 60)
 
     env = DroneEnv(
         max_steps=1000,
         enable_crash_detection=True,
-        crash_z_threshold=-50.0,  # Sehr niedrig, damit nur Tilt triggert
+        crash_z_vel_threshold=-50.0,  # Very low, so only tilt triggers
         crash_tilt_threshold=80.0,
         render_mode=None
     )
 
     obs, info = env.reset(seed=123)
-    print(f"Start-Position: {info['position']}")
+    print(f"Start position: {info['position']}")
 
-    # Erzwinge extreme Neigung (sehr asymmetrischer Thrust)
+    # Force extreme tilt (very asymmetric thrust)
     crashed = False
     for step in range(200):
-        action = np.array([0.0, 0.5, 0.5, 0.0])  # Extrem asymmetrisch
+        action = np.array([0.0, 0.5, 0.5, 0.0])  # Extremely asymmetric
         obs, reward, terminated, truncated, info = env.step(action)
 
         roll_deg = np.rad2deg(obs[6])
@@ -76,12 +76,12 @@ def test_crash_tilt():
 
         if terminated:
             crashed = True
-            print(f"\n✓ Crash detektiert bei Step {step}")
+            print(f"\n✓ Crash detected at step {step}")
             print(f"  Roll={roll_deg:.1f}°, Pitch={pitch_deg:.1f}°")
             break
 
     if not crashed:
-        print(f"\n✗ Kein Crash detektiert! Finale Neigung: Roll={roll_deg:.1f}°, Pitch={pitch_deg:.1f}°")
+        print(f"\n✗ No crash detected! Final tilt: Roll={roll_deg:.1f}°, Pitch={pitch_deg:.1f}°")
 
     env.close()
     print()
@@ -89,20 +89,20 @@ def test_crash_tilt():
 
 
 def test_no_crash_disabled():
-    """Test: Keine Crash-Detektion wenn deaktiviert."""
+    """Test: No crash detection when disabled."""
     print("=" * 60)
-    print("Test 3: Crash-Detektion deaktiviert")
+    print("Test 3: Crash detection disabled")
     print("=" * 60)
 
     env = DroneEnv(
         max_steps=200,
-        enable_crash_detection=False,  # Deaktiviert
+        enable_crash_detection=False,  # Disabled
         render_mode=None
     )
 
     obs, info = env.reset(seed=42)
 
-    # Lasse die Drohne fallen
+    # Let the drone fall
     crashed = False
     for step in range(200):
         action = np.array([0.0, 0.0, 0.0, 0.0])
@@ -113,10 +113,10 @@ def test_no_crash_disabled():
             break
 
     if not crashed:
-        print(f"✓ Korrekt: Kein Crash detektiert (Crash-Detektion deaktiviert)")
-        print(f"  Finale Z-Position: {info['position'][2]:.2f}m")
+        print(f"✓ Correct: No crash detected (crash detection disabled)")
+        print(f"  Final Z-position: {info['position'][2]:.2f}m")
     else:
-        print(f"✗ Fehler: Crash detektiert obwohl deaktiviert!")
+        print(f"✗ Error: Crash detected despite being disabled!")
 
     env.close()
     print()
@@ -124,9 +124,9 @@ def test_no_crash_disabled():
 
 
 def test_normal_flight():
-    """Test: Kein Crash bei normalem Hover."""
+    """Test: No crash during normal hovering."""
     print("=" * 60)
-    print("Test 4: Normaler Hover (kein Crash)")
+    print("Test 4: Normal hover (no crash)")
     print("=" * 60)
 
     env = DroneEnv(
@@ -145,14 +145,14 @@ def test_normal_flight():
 
         if terminated:
             crashed = True
-            print(f"✗ Unerwarteter Crash bei Step {step}")
+            print(f"✗ Unexpected crash at step {step}")
             print(f"  Z={info['position'][2]:.2f}m")
             break
 
     if not crashed:
-        print(f"✓ Korrekt: Kein Crash bei normalem Hover")
-        print(f"  Finale Z-Position: {info['position'][2]:.2f}m")
-        print(f"  Alle {step+1} Steps erfolgreich")
+        print(f"✓ Correct: No crash during normal hover")
+        print(f"  Final Z-position: {info['position'][2]:.2f}m")
+        print(f"  All {step+1} steps successful")
 
     env.close()
     print()
@@ -160,29 +160,29 @@ def test_normal_flight():
 
 
 def test_crash_info():
-    """Test: 'crashed' Flag in info."""
+    """Test: 'crashed' flag in info dictionary."""
     print("=" * 60)
-    print("Test 5: 'crashed' Info-Flag")
+    print("Test 5: 'crashed' Info Flag")
     print("=" * 60)
 
     env = DroneEnv(
         max_steps=1000,
         enable_crash_detection=True,
-        crash_z_threshold=-5.0,
+        crash_z_vel_threshold=-5.0,
         render_mode=None
     )
 
     obs, info = env.reset(seed=42)
 
-    # Prüfe dass 'crashed' in info vorhanden ist
+    # Check that 'crashed' is present in info
     action = np.array([0.0, 0.0, 0.0, 0.0])
     obs, reward, terminated, truncated, info = env.step(action)
 
     if 'crashed' in info:
-        print(f"✓ 'crashed' Flag vorhanden in info")
-        print(f"  Wert: {info['crashed']}")
+        print(f"✓ 'crashed' flag present in info")
+        print(f"  Value: {info['crashed']}")
     else:
-        print(f"✗ 'crashed' Flag fehlt in info!")
+        print(f"✗ 'crashed' flag missing in info!")
 
     env.close()
     print()
@@ -191,21 +191,21 @@ def test_crash_info():
 
 if __name__ == "__main__":
     print("\n" + "=" * 60)
-    print("CRASH-DETEKTION TESTS")
+    print("CRASH DETECTION TESTS")
     print("=" * 60 + "\n")
 
     results = []
 
-    # Führe alle Tests aus
+    # Run all tests
     results.append(("Z-Threshold Crash", test_crash_z_threshold()))
     results.append(("Tilt Crash", test_crash_tilt()))
-    results.append(("Deaktiviert", test_no_crash_disabled()))
-    results.append(("Normaler Hover", test_normal_flight()))
+    results.append(("Disabled", test_no_crash_disabled()))
+    results.append(("Normal Hover", test_normal_flight()))
     results.append(("Info-Flag", test_crash_info()))
 
-    # Zusammenfassung
+    # Summary
     print("=" * 60)
-    print("ZUSAMMENFASSUNG")
+    print("SUMMARY")
     print("=" * 60)
 
     passed = sum(1 for _, result in results if result)
@@ -215,10 +215,10 @@ if __name__ == "__main__":
         status = "✓ PASS" if result else "✗ FAIL"
         print(f"{status}: {name}")
 
-    print(f"\nErgebnis: {passed}/{total} Tests bestanden")
+    print(f"\nResult: {passed}/{total} tests passed")
 
     if passed == total:
-        print("\n🎉 Alle Tests erfolgreich!")
+        print("\n🎉 All tests successful!")
     else:
-        print(f"\n⚠️  {total - passed} Test(s) fehlgeschlagen")
+        print(f"\n⚠️  {total - passed} test(s) failed")
 

@@ -178,8 +178,9 @@ for thrust in [0.2, 0.25, 0.3]:
 **Lösung:**
 
 Editiere `src/drone_env/env.py`, Zeile ~50:
+
 ```python
-self.thrust_coeff = 12.0  # Erhöhen für mehr Thrust
+self.thrust_coef = 12.0  # Erhöhen für mehr Thrust
 ```
 
 Oder passe Masse/Gravitation an:
@@ -202,8 +203,9 @@ self.inertia = np.array([0.02, 0.02, 0.04])  # Erhöhen
 ```
 
 Oder Torque-Koeffizient reduzieren:
+
 ```python
-self.torque_coeff = 0.05  # Statt 0.1
+self.torque_coef = 0.05  # Statt 0.1
 ```
 
 ### Problem: Wind zu stark/schwach

@@ -1,6 +1,6 @@
 """
-Drohnen-Modell für die Simulation.
-Kapselt die Physik und den Zustand einer Quadcopter-Drohne.
+Drone model for simulation.
+Encapsulates the physics and state of a quadcopter drone.
 """
 import numpy as np
 from typing import Tuple
@@ -8,12 +8,12 @@ from typing import Tuple
 
 class Drone:
     """
-    Quadcopter-Drohne in X-Konfiguration.
+    Quadcopter drone in X-configuration.
 
-    Verwaltet:
-    - Physikalische Parameter (Masse, Trägheit, etc.)
-    - Zustand (Position, Geschwindigkeit, Orientierung, etc.)
-    - Physik-Simulation (Kräfte, Drehmomente, Integration)
+    Manages:
+    - Physical parameters (mass, inertia, etc.)
+    - State (position, velocity, orientation, etc.)
+    - Physics simulation (forces, torques, integration)
     """
 
     def __init__(
@@ -21,42 +21,49 @@ class Drone:
         mass: float = 1.0,
         arm_length: float = 0.25,
         inertia: np.ndarray = None,
-        thrust_coeff: float = 10.0,
-        torque_coeff: float = 0.1,
-        linear_drag_coeff: float = 0.01,
-        angular_drag_coeff: float = 0.05,
+        thrust_coef: float = 10.0,
+        torque_coef: float = 0.1,
+        linear_drag_coef: float = 0.01,
+        angular_drag_coef: float = 0.05,
         center_of_mass_offset: float = 0.03,
         pendulum_damping: float = 0.5,
     ):
         """
-        Initialisiert die Drohne mit ihren physikalischen Eigenschaften.
+        Initializes the drone with its physical properties.
 
         Args:
-            mass: Masse der Drohne in kg
-            arm_length: Distanz von Center zu Rotor in m
-            inertia: Trägheitsmoment [Ix, Iy, Iz] in kg*m^2
-            thrust_coeff: Thrust-Koeffizient
-            torque_coeff: Torque-Koeffizient
-            linear_drag_coeff: Luftwiderstand linear
-            angular_drag_coeff: Luftwiderstand rotational
-            center_of_mass_offset: Massenschwerpunkt-Offset in m
-            pendulum_damping: Pendel-Dämpfungsfaktor
+            mass: Mass of the drone in kilograms. Default is 1.0 kg.
+            arm_length: Distance from center to each rotor in meters. Default is 0.25 m.
+            inertia: Moment of inertia tensor [Ix, Iy, Iz] in kg*m^2.
+                If None, defaults to [0.01, 0.01, 0.02] for a typical quadcopter.
+            thrust_coef: Thrust coefficient that maps motor input to force.
+                Higher values mean more thrust per motor input. Default is 10.0.
+            torque_coef: Torque coefficient for reactive torque from rotor spin.
+                Default is 0.1.
+            linear_drag_coef: Linear drag coefficient for air resistance.
+                Drag force scales linearly with velocity. Default is 0.01.
+            angular_drag_coef: Angular drag coefficient for rotational damping.
+                Reduces angular velocity over time. Default is 0.05.
+            center_of_mass_offset: Offset of center of mass from geometric center in meters.
+                Creates a pendulum stabilization effect. Default is 0.03 m.
+            pendulum_damping: Damping factor for pendulum stabilization effect.
+                Higher values provide stronger self-stabilization. Default is 0.5.
         """
-        # Intrinsische physikalische Parameter der Drohne
+        # Intrinsic physical parameters of the drone
         self.mass = mass
         self.arm_length = arm_length
         self.inertia = inertia if inertia is not None else np.array([0.01, 0.01, 0.02])
-        self.thrust_coeff = thrust_coeff
-        self.torque_coeff = torque_coeff
-        self.linear_drag_coeff = linear_drag_coeff
-        self.angular_drag_coeff = angular_drag_coeff
+        self.thrust_coef = thrust_coef
+        self.torque_coef = torque_coef
+        self.linear_drag_coef = linear_drag_coef
+        self.angular_drag_coef = angular_drag_coef
         self.center_of_mass_offset = center_of_mass_offset
         self.pendulum_damping = pendulum_damping
 
-        # Rotor-Konfiguration (X-Formation)
-        # Motor 0: vorne-rechts (+x, +y), Motor 1: hinten-links (-x, -y)
-        # Motor 2: vorne-links (-x, +y), Motor 3: hinten-rechts (+x, -y)
-        angle = np.pi / 4  # 45 Grad
+        # Rotor configuration (X-formation)
+        # Motor 0: front-right (+x, +y), Motor 1: rear-left (-x, -y)
+        # Motor 2: front-left (-x, +y), Motor 3: rear-right (+x, -y)
+        angle = np.pi / 4  # 45 degrees
         self.rotor_positions = np.array([
             [self.arm_length * np.cos(angle), self.arm_length * np.sin(angle), 0],      # Motor 0
             [-self.arm_length * np.cos(angle), -self.arm_length * np.sin(angle), 0],    # Motor 1
@@ -64,10 +71,10 @@ class Drone:
             [self.arm_length * np.cos(angle), -self.arm_length * np.sin(angle), 0],     # Motor 3
         ], dtype=np.float32)
 
-        # Rotor-Drehrichtungen (1 = CW, -1 = CCW)
+        # Rotor rotation directions (1 = CW, -1 = CCW)
         self.rotor_directions = np.array([1, 1, -1, -1])
 
-        # Zustand
+        # State
         self.position = np.zeros(3, dtype=np.float32)
         self.velocity = np.zeros(3, dtype=np.float32)
         self.orientation = np.zeros(3, dtype=np.float32)  # Roll, Pitch, Yaw
@@ -75,10 +82,11 @@ class Drone:
 
     def reset(self, initial_orientation: np.ndarray = None):
         """
-        Setzt die Drohne zurück auf Initialzustand.
+        Resets the drone to its initial state.
 
         Args:
-            initial_orientation: Optionale Start-Orientierung [roll, pitch, yaw]
+            initial_orientation: Optional initial orientation as [roll, pitch, yaw] in radians.
+                If None, a small random orientation is applied.
         """
         self.position = np.zeros(3, dtype=np.float32)
         self.velocity = np.zeros(3, dtype=np.float32)
@@ -86,7 +94,7 @@ class Drone:
         if initial_orientation is not None:
             self.orientation = initial_orientation.astype(np.float32)
         else:
-            # Kleine zufällige Startorientierung
+            # Small random initial orientation
             self.orientation = np.random.uniform(-0.1, 0.1, 3).astype(np.float32)
 
         self.angular_velocity = np.zeros(3, dtype=np.float32)
@@ -101,63 +109,71 @@ class Drone:
         max_angular_velocity: float = 10.0,
     ):
         """
-        Aktualisiert die Drohnen-Physik für einen Zeitschritt.
+        Updates the drone physics for one timestep.
+
+        Simulates the physical behavior of the drone based on motor inputs and environmental
+        factors using simplified Euler integration.
 
         Args:
-            motor_thrusts: Array mit 4 normalisierten Thrust-Werten [0, 1]
-            dt: Zeitschritt in Sekunden
-            wind_vector: Optionaler Windvektor [wx, wy, wz] in m/s
-            gravity: Gravitationskonstante in m/s^2
-            max_velocity: Maximale Geschwindigkeit in m/s (Clipping)
-            max_angular_velocity: Maximale Winkelgeschwindigkeit in rad/s (Clipping)
+            motor_thrusts: Array of 4 normalized thrust values in range [0, 1], one per motor.
+                Order: [front-right, rear-left, front-left, rear-right].
+            dt: Timestep duration in seconds. Smaller values increase accuracy but require
+                more computation steps.
+            wind_vector: Optional wind velocity vector [wx, wy, wz] in m/s.
+                If None, no wind is applied. Wind affects drag forces.
+            gravity: Gravitational acceleration in m/s². Default is 9.81 m/s² (Earth).
+            max_velocity: Maximum linear velocity component in m/s. Velocity is clipped
+                to this value to prevent numerical instability. Default is 40.0 m/s.
+            max_angular_velocity: Maximum angular velocity component in rad/s. Angular
+                velocity is clipped to this value. Default is 10.0 rad/s.
         """
         if wind_vector is None:
             wind_vector = np.zeros(3, dtype=np.float32)
 
-        # 1. Rotation von Body-Frame zu World-Frame
+        # 1. Rotation from body-frame to world-frame
         R = self.get_rotation_matrix()
 
-        # 2. Thrust-Richtung im World-Frame
+        # 2. Thrust direction in world-frame
         thrust_direction_world = R @ np.array([0, 0, 1], dtype=np.float32)
 
-        # 3. Geschwindigkeit in Thrust-Richtung projizieren
+        # 3. Project velocity onto thrust direction
         velocity_in_thrust_direction = np.dot(self.velocity, thrust_direction_world)
 
-        # 4. Thrust-Modifikation basierend auf Geschwindigkeit
-        # Bei negativer Geschwindigkeit (Fallen): mehr Thrust-Effizienz
-        # Bei positiver Geschwindigkeit (Steigen): weniger Thrust-Effizienz
+        # 4. Thrust modification based on velocity
+        # At negative velocity (falling): more thrust efficiency
+        # At positive velocity (climbing): less thrust efficiency
         max_speed_in_thrust_dir = 30.0  # m/s
         speed_factor = max(0.0, 1.0 - (velocity_in_thrust_direction / max_speed_in_thrust_dir))
 
-        # 5. Thrust-Kräfte berechnen
-        thrusts = motor_thrusts * self.thrust_coeff * speed_factor
+        # 5. Calculate thrust forces
+        thrusts = motor_thrusts * self.thrust_coef * speed_factor
 
-        # 6. Gesamtkraft in Body-Frame
+        # 6. Total force in body-frame
         total_thrust_body = np.array([0, 0, np.sum(thrusts)], dtype=np.float32)
 
-        # 7. Rotation zu World-Frame
+        # 7. Rotate to world-frame
         total_force_world = R @ total_thrust_body
 
-        # 8. Gravitation
+        # 8. Gravity
         gravity_force = np.array([0, 0, -self.mass * gravity], dtype=np.float32)
 
-        # 9. Luftwiderstand (relativ zum Wind)
+        # 9. Air drag (relative to wind)
         relative_velocity = self.velocity - wind_vector
         relative_speed = np.linalg.norm(relative_velocity)
 
         if relative_speed > 0.01:
-            drag_force = -self.linear_drag_coeff * relative_speed * relative_velocity
+            drag_force = -self.linear_drag_coef * relative_speed * relative_velocity
         else:
             drag_force = np.zeros(3, dtype=np.float32)
 
-        # 10. Gesamtkraft und lineare Beschleunigung
+        # 10. Total force and linear acceleration
         total_force = total_force_world + gravity_force + drag_force
         linear_acceleration = total_force / self.mass
 
-        # 11. Drehmoment berechnen
+        # 11. Calculate torque
         torque = self._compute_torque(thrusts)
 
-        # 12. Pendel-Stabilisierung
+        # 12. Pendulum stabilization
         roll, pitch, _ = self.orientation
         pendulum_torque = self.pendulum_damping * np.array([
             -self.mass * gravity * self.center_of_mass_offset * np.sin(roll),
@@ -165,16 +181,16 @@ class Drone:
             0.0
         ], dtype=np.float32)
 
-        # 13. Winkelbeschleunigung
+        # 13. Angular acceleration
         angular_acceleration = (torque + pendulum_torque) / self.inertia
 
-        # 14. Integration (Euler)
+        # 14. Integration (Euler method)
         self.velocity += linear_acceleration * dt
         self.velocity = np.clip(self.velocity, -max_velocity, max_velocity)
         self.position += self.velocity * dt
 
         self.angular_velocity += angular_acceleration * dt
-        self.angular_velocity *= (1 - self.angular_drag_coeff)
+        self.angular_velocity *= (1 - self.angular_drag_coef)
         self.angular_velocity = np.clip(
             self.angular_velocity,
             -max_angular_velocity,
@@ -182,78 +198,80 @@ class Drone:
         )
         self.orientation += self.angular_velocity * dt
 
-        # Normalisiere Euler-Winkel auf [-pi, pi]
+        # Normalize Euler angles to [-pi, pi]
         self.orientation = (self.orientation + np.pi) % (2 * np.pi) - np.pi
 
     def _compute_torque(self, thrusts: np.ndarray) -> np.ndarray:
         """
-        Berechnet das Drehmoment basierend auf Rotor-Thrusts.
+        Calculates the torque based on rotor thrusts.
 
-        In X-Konfiguration:
-        - Roll: Thrust-Differenz zwischen rechten und linken Motoren
-        - Pitch: Differenz zwischen vorderen und hinteren Motoren
-        - Yaw: Differenz in Drehrichtungen (reaktives Torque)
+        In X-configuration:
+        - Roll: Thrust difference between right and left motors
+        - Pitch: Thrust difference between front and rear motors
+        - Yaw: Difference in rotation directions (reactive torque)
 
         Args:
-            thrusts: Array mit 4 Thrust-Werten
+            thrusts: Array of 4 thrust values, one per motor.
 
         Returns:
-            Drehmoment-Vektor [roll_torque, pitch_torque, yaw_torque]
+            Torque vector [roll_torque, pitch_torque, yaw_torque] in N*m.
         """
-        # Roll-Torque (um X-Achse): Rechte (0, 3) vs. Linke (1, 2)
+        # Roll torque (around X-axis): Right (0, 3) vs. Left (1, 2)
         roll_torque = (thrusts[0] + thrusts[3] - thrusts[1] - thrusts[2]) * \
                       self.arm_length / np.sqrt(2)
 
-        # Pitch-Torque (um Y-Achse): Vordere (0, 2) vs. Hintere (1, 3)
+        # Pitch torque (around Y-axis): Front (0, 2) vs. Rear (1, 3)
         pitch_torque = (thrusts[0] + thrusts[2] - thrusts[1] - thrusts[3]) * \
                        self.arm_length / np.sqrt(2)
 
-        # Yaw-Torque (um Z-Achse): Reaktive Torques
-        yaw_torque = np.sum(self.rotor_directions * thrusts) * self.torque_coeff
+        # Yaw torque (around Z-axis): Reactive torques
+        yaw_torque = np.sum(self.rotor_directions * thrusts) * self.torque_coef
 
         return np.array([roll_torque, pitch_torque, yaw_torque], dtype=np.float32)
 
     def get_rotation_matrix(self) -> np.ndarray:
         """
-        Berechnet die Rotationsmatrix von Body-Frame zu World-Frame.
+        Computes the rotation matrix from body-frame to world-frame.
 
-        Verwendet Euler-Winkel [roll, pitch, yaw] in ZYX-Konvention.
+        Uses Euler angles [roll, pitch, yaw] in ZYX convention (yaw-pitch-roll).
 
         Returns:
-            3x3 Rotationsmatrix
+            3x3 rotation matrix that transforms vectors from body coordinates
+            to world coordinates.
         """
         roll, pitch, yaw = self.orientation
 
-        # Roll (X-Achse)
+        # Roll (rotation around X-axis)
         Rx = np.array([
             [1, 0, 0],
             [0, np.cos(roll), -np.sin(roll)],
             [0, np.sin(roll), np.cos(roll)]
         ], dtype=np.float32)
 
-        # Pitch (Y-Achse)
+        # Pitch (rotation around Y-axis)
         Ry = np.array([
             [np.cos(pitch), 0, np.sin(pitch)],
             [0, 1, 0],
             [-np.sin(pitch), 0, np.cos(pitch)]
         ], dtype=np.float32)
 
-        # Yaw (Z-Achse)
+        # Yaw (rotation around Z-axis)
         Rz = np.array([
             [np.cos(yaw), -np.sin(yaw), 0],
             [np.sin(yaw), np.cos(yaw), 0],
             [0, 0, 1]
         ], dtype=np.float32)
 
-        # Kombinierte Rotation: R = Rz @ Ry @ Rx
+        # Combined rotation: R = Rz @ Ry @ Rx
         return Rz @ Ry @ Rx
 
     def get_state(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
-        Gibt den aktuellen Zustand der Drohne zurück.
+        Returns the current state of the drone.
 
         Returns:
-            Tuple von (position, velocity, orientation, angular_velocity)
+            Tuple of (position, velocity, orientation, angular_velocity).
+            All arrays are copied to prevent external modification.
         """
         return (
             self.position.copy(),
@@ -270,13 +288,15 @@ class Drone:
         angular_velocity: np.ndarray = None
     ):
         """
-        Setzt den Zustand der Drohne.
+        Sets the state of the drone.
 
         Args:
-            position: Neue Position [x, y, z]
-            velocity: Neue Geschwindigkeit [vx, vy, vz]
-            orientation: Neue Orientierung [roll, pitch, yaw]
-            angular_velocity: Neue Winkelgeschwindigkeit [wx, wy, wz]
+            position: New position [x, y, z] in meters. If None, position is unchanged.
+            velocity: New velocity [vx, vy, vz] in m/s. If None, velocity is unchanged.
+            orientation: New orientation [roll, pitch, yaw] in radians.
+                If None, orientation is unchanged.
+            angular_velocity: New angular velocity [wx, wy, wz] in rad/s.
+                If None, angular velocity is unchanged.
         """
         if position is not None:
             self.position = position.astype(np.float32)
@@ -295,28 +315,39 @@ class Drone:
         target_position: np.ndarray = None
     ) -> bool:
         """
-        Prüft ob die Drohne abgestürzt ist.
+        Checks if the drone has crashed.
+
+        A crash is detected if any of the following conditions are met:
+        - Vertical velocity exceeds the threshold (falling too fast)
+        - Roll or pitch angle exceeds the tilt threshold (unstable orientation)
+        - Distance from target exceeds maximum allowed distance (lost control)
 
         Args:
-            z_velocity_threshold: Schwellwert für vertikale Geschwindigkeit
-            tilt_threshold_rad: Schwellwert für Roll/Pitch in Radiant
-            max_distance: Maximale Entfernung vom Ziel
-            target_position: Zielposition für Distanz-Check
+            z_velocity_threshold: Threshold for vertical velocity in m/s.
+                Negative values indicate downward motion. Default is -20.0 m/s.
+                If drone falls faster than this, a crash is detected.
+            tilt_threshold_rad: Threshold for roll/pitch angles in radians.
+                If None, tilt checking is disabled. If absolute value of roll
+                or pitch exceeds this threshold, a crash is detected.
+            max_distance: Maximum allowed distance from target in meters.
+                If None, distance checking is disabled. Requires target_position.
+            target_position: Target position [x, y, z] in meters for distance check.
+                Required if max_distance is specified, otherwise ignored.
 
         Returns:
-            True wenn Crash detektiert, sonst False
+            True if crash is detected, False otherwise.
         """
-        # Fällt zu schnell
+        # Falling too fast
         if self.velocity[2] < z_velocity_threshold:
             return True
 
-        # Extreme Neigung
+        # Extreme tilt
         if tilt_threshold_rad is not None:
             roll, pitch, _ = self.orientation
             if abs(roll) > tilt_threshold_rad or abs(pitch) > tilt_threshold_rad:
                 return True
 
-        # Zu weit vom Ziel entfernt
+        # Too far from target
         if max_distance is not None and target_position is not None:
             distance = np.linalg.norm(target_position - self.position)
             if distance > max_distance:

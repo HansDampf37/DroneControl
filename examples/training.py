@@ -1,16 +1,16 @@
 """
-Beispiel-Training mit Ray RLlib.
+Example training with Ray RLlib.
 
 Installation:
     pip install ray[rllib] gymnasium torch
 
-Ausführung:
+Usage:
     python training.py --algorithm PPO --timesteps 100000
 """
 import sys
 from pathlib import Path
 
-# Füge src/ zum Path hinzu
+# Add src/ to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import argparse
@@ -21,12 +21,12 @@ from src.drone_env import RLlibDroneEnv
 
 def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../models/drone_model'):
     """
-    Trainiert einen RL-Agenten mit Ray RLlib.
+    Trains an RL agent with Ray RLlib.
 
     Args:
-        algorithm: RL-Algorithmus ('PPO', 'SAC', 'APPO')
-        total_timesteps: Anzahl der Trainings-Steps
-        save_path: Pfad zum Speichern des Modells
+        algorithm: RL algorithm ('PPO', 'SAC', 'APPO'). Default is 'PPO'.
+        total_timesteps: Number of training steps. Default is 100000.
+        save_path: Path to save the trained model. Default is '../models/drone_model'.
     """
     try:
         from ray import tune, air
@@ -35,23 +35,23 @@ def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../mode
         from ray.rllib.algorithms.appo import APPOConfig
         import ray
     except ImportError:
-        print("ERROR: Ray RLlib nicht installiert!")
-        print("Installation mit: pip install ray[rllib] torch")
+        print("ERROR: Ray RLlib not installed!")
+        print("Install with: pip install ray[rllib] torch")
         return
 
-    # Ray initialisieren
+    # Initialize Ray
     if not ray.is_initialized():
         ray.init(ignore_reinit_error=True, num_gpus=0)
 
-    # Konvertiere zu absolutem Pfad (RLlib 2.5+ benötigt absoluten Pfad)
+    # Convert to absolute path (RLlib 2.5+ requires absolute path)
     save_path = os.path.abspath(save_path)
 
-    # Erstelle Verzeichnisse
+    # Create directories
     os.makedirs(save_path, exist_ok=True)
 
-    print(f"Erstelle {algorithm}-Konfiguration...")
+    print(f"Creating {algorithm} configuration...")
 
-    # Environment-Konfiguration
+    # Environment configuration
     env_config = {
         "max_steps": 100,
         "render_mode": None,
@@ -59,7 +59,7 @@ def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../mode
         "dt": 0.02
     }
 
-    # Algorithmus-Konfiguration
+    # Algorithm configuration
     if algorithm == 'PPO':
         config = (
             PPOConfig()
@@ -122,25 +122,25 @@ def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../mode
             .resources(num_gpus=0)
         )
     else:
-        print(f"ERROR: Unbekannter Algorithmus '{algorithm}'")
-        print("Verfügbare Algorithmen: PPO, SAC, APPO")
+        print(f"ERROR: Unknown algorithm '{algorithm}'")
+        print("Available algorithms: PPO, SAC, APPO")
         ray.shutdown()
         return
 
     # Training
-    print(f"\nStarte Training für {total_timesteps} Timesteps...")
+    print(f"\nStarting training for {total_timesteps} timesteps...")
     print("=" * 60)
 
-    # Berechne Anzahl der Iterationen
+    # Calculate number of iterations
     steps_per_iteration = config.train_batch_size
     num_iterations = max(1, total_timesteps // steps_per_iteration)
 
     algo = None
     try:
-        # Erstelle Algorithmus
+        # Create algorithm
         algo = config.build()
 
-        # Training-Loop
+        # Training loop
         for i in range(num_iterations):
             result = algo.train()
 
@@ -150,7 +150,7 @@ def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../mode
                 print(f"Iteration {i}/{num_iterations}")
                 print(f"{'='*60}")
 
-                # RLlib 2.5+ verwendet 'env_runners' statt 'episode_*'
+                # RLlib 2.5+ uses 'env_runners' instead of 'episode_*'
                 env_runners = result.get('env_runners', {})
                 print(f"Episode Reward Mean: {env_runners.get('episode_return_mean', 0.0):.2f}")
                 print(f"Episode Reward Min:  {env_runners.get('episode_return_min', 0.0):.2f}")
@@ -160,18 +160,18 @@ def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../mode
                 print(f"Env Steps Sampled:   {env_runners.get('num_env_steps_sampled', 0):.0f}")
                 print(f"Env Steps Lifetime:  {result.get('num_env_steps_sampled_lifetime', 0):.0f}")
 
-            # Checkpoint speichern
+            # Save checkpoint
             if i % 50 == 0 and i > 0:
                 checkpoint_dir = algo.save(save_path)
-                print(f"\nCheckpoint gespeichert: {checkpoint_dir}")
+                print(f"\nCheckpoint saved: {checkpoint_dir}")
 
     except KeyboardInterrupt:
-        print("\n\nTraining unterbrochen!")
+        print("\n\nTraining interrupted!")
 
-    # Finales Modell speichern
+    # Save final model
     if algo is not None:
         final_checkpoint = algo.save(save_path)
-        print(f"\nFinales Modell gespeichert: {final_checkpoint}")
+        print(f"\nFinal model saved: {final_checkpoint}")
         algo.stop()
 
     ray.shutdown()
@@ -181,13 +181,13 @@ def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../mode
 
 def evaluate_model(model_path, episodes=5, render=True, algorithm='PPO'):
     """
-    Evaluiert ein trainiertes Modell.
+    Evaluates a trained model.
 
     Args:
-        model_path: Pfad zum gespeicherten Checkpoint
-        episodes: Anzahl der Test-Episoden
-        render: Ob visualisiert werden soll
-        algorithm: Welcher Algorithmus verwendet wurde
+        model_path: Path to the saved checkpoint.
+        episodes: Number of test episodes. Default is 5.
+        render: Whether to visualize the environment. Default is True.
+        algorithm: Which algorithm was used for training ('PPO', 'SAC', 'APPO').
     """
     try:
         from ray.rllib.algorithms.ppo import PPO
@@ -196,28 +196,28 @@ def evaluate_model(model_path, episodes=5, render=True, algorithm='PPO'):
         from src.drone_env import DroneEnv
         import ray
     except ImportError:
-        print("ERROR: Ray RLlib nicht installiert!")
+        print("ERROR: Ray RLlib not installed!")
         return
 
-    # Ray initialisieren
+    # Initialize Ray
     if not ray.is_initialized():
         ray.init(ignore_reinit_error=True, num_gpus=0)
 
-    # Lade Algorithmus
-    model_path   = os.path.abspath(model_path)
-    print(f"Lade Modell von {model_path}...")
+    # Load algorithm
+    model_path = os.path.abspath(model_path)
+    print(f"Loading model from {model_path}...")
 
     algo_class = {'PPO': PPO, 'SAC': SAC, 'APPO': APPO}.get(algorithm)
     if algo_class is None:
-        print(f"ERROR: Unbekannter Algorithmus '{algorithm}'")
+        print(f"ERROR: Unknown algorithm '{algorithm}'")
         ray.shutdown()
         return
 
     try:
         algo = algo_class.from_checkpoint(model_path)
-        print(f"Modell erfolgreich geladen als {algorithm}")
+        print(f"Model successfully loaded as {algorithm}")
     except Exception as e:
-        print(f"ERROR: Konnte Modell nicht laden: {e}")
+        print(f"ERROR: Could not load model: {e}")
         ray.shutdown()
         return
 
@@ -225,7 +225,7 @@ def evaluate_model(model_path, episodes=5, render=True, algorithm='PPO'):
     render_mode = "human" if render else None
     env = DroneEnv(max_steps=500, render_mode=render_mode)
 
-    # Hole RLModule für Inferenz (neue API in RLlib 2.5+)
+    # Get RLModule for inference (new API in RLlib 2.5+)
     rl_module = algo.get_module()
 
     episode_rewards = []
@@ -238,34 +238,34 @@ def evaluate_model(model_path, episodes=5, render=True, algorithm='PPO'):
 
         print(f"\n{'='*60}")
         print(f"Episode {episode + 1}/{episodes}")
-        print(f"Start-Distanz: {info['distance_to_target']:.2f}m")
+        print(f"Initial distance: {info['distance_to_target']:.2f}m")
 
         done = False
         step = 0
 
         while not done:
-            # Verwende RLModule.forward_inference für die neue API
+            # Use RLModule.forward_inference for the new API
             import torch
 
-            # Konvertiere Observation zu Tensor und füge Batch-Dimension hinzu
+            # Convert observation to tensor and add batch dimension
             obs_tensor = torch.from_numpy(obs).float().unsqueeze(0)
 
-            # Forward pass durch RLModule
+            # Forward pass through RLModule
             with torch.no_grad():
                 output = rl_module.forward_inference({"obs": obs_tensor})
 
-            # Extrahiere Action (deterministisch)
+            # Extract action (deterministic)
             if "actions" in output:
                 action = output["actions"].cpu().numpy()[0]
             elif "action_dist_inputs" in output:
-                # Für deterministische Policy: verwende Mittelwert
-                # action_dist_inputs enthält [mean, log_std] konkateniert
-                # Wir brauchen nur die erste Hälfte (mean)
+                # For deterministic policy: use mean
+                # action_dist_inputs contains [mean, log_std] concatenated
+                # We only need the first half (mean)
                 action_dist = output["action_dist_inputs"].cpu().numpy()[0]
                 action_size = len(action_dist) // 2
-                action = action_dist[:action_size]  # Nur Mittelwert
+                action = action_dist[:action_size]  # Only mean
             else:
-                raise ValueError(f"Unerwartetes Output-Format: {output.keys()}")
+                raise ValueError(f"Unexpected output format: {output.keys()}")
 
             obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
@@ -278,32 +278,32 @@ def evaluate_model(model_path, episodes=5, render=True, algorithm='PPO'):
                 env.render()
 
             if step % 100 == 0:
-                print(f"  Step {step}: Distanz={info['distance_to_target']:.2f}m")
+                print(f"  Step {step}: Distance={info['distance_to_target']:.2f}m")
 
         min_dist = np.min(distances)
         avg_dist = np.mean(distances)
         final_dist = distances[-1]
 
-        print(f"\nErgebnisse:")
+        print(f"\nResults:")
         print(f"  Total Reward: {total_reward:.2f}")
-        print(f"  Durchschn. Distanz: {avg_dist:.2f}m")
-        print(f"  Min. Distanz: {min_dist:.2f}m")
-        print(f"  Finale Distanz: {final_dist:.2f}m")
+        print(f"  Avg. Distance: {avg_dist:.2f}m")
+        print(f"  Min. Distance: {min_dist:.2f}m")
+        print(f"  Final Distance: {final_dist:.2f}m")
         if info.get('crashed'):
-            print(f"  ⚠️  Episode endete mit Crash!")
+            print(f"  ⚠️  Episode ended with crash!")
 
         episode_rewards.append(total_reward)
         episode_distances.append(avg_dist)
 
     env.close()
 
-    # Zusammenfassung
+    # Summary
     print(f"\n{'='*60}")
-    print(f"Zusammenfassung über {episodes} Episoden:")
+    print(f"Summary over {episodes} episodes:")
     print(f"{'='*60}")
-    print(f"Durchschn. Total Reward: {np.mean(episode_rewards):.2f} ± {np.std(episode_rewards):.2f}")
-    print(f"Durchschn. Distanz: {np.mean(episode_distances):.2f} ± {np.std(episode_distances):.2f}m")
-    print(f"Beste Episode Reward: {np.max(episode_rewards):.2f}")
+    print(f"Average Total Reward: {np.mean(episode_rewards):.2f} ± {np.std(episode_rewards):.2f}")
+    print(f"Average Distance: {np.mean(episode_distances):.2f} ± {np.std(episode_distances):.2f}m")
+    print(f"Best Episode Reward: {np.max(episode_rewards):.2f}")
 
     # Cleanup
     algo.stop()
@@ -311,29 +311,29 @@ def evaluate_model(model_path, episodes=5, render=True, algorithm='PPO'):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Drohnen-RL Training mit Ray RLlib')
+    parser = argparse.ArgumentParser(description='Drone RL Training with Ray RLlib')
     parser.add_argument('--mode', type=str, default='train', choices=['train', 'eval'],
-                        help='Modus: train oder eval')
+                        help='Mode: train or eval')
     parser.add_argument('--algorithm', type=str, default='PPO', choices=['PPO', 'SAC', 'APPO'],
-                        help='RL-Algorithmus')
+                        help='RL algorithm')
     parser.add_argument('--timesteps', type=int, default=1000000,
-                        help='Anzahl der Trainings-Timesteps')
+                        help='Number of training timesteps')
     parser.add_argument('--model-path', type=str, default='models/drone_model',
-                        help='Pfad zum Modell (zum Speichern/Laden)')
+                        help='Path to model (for saving/loading)')
     parser.add_argument('--episodes', type=int, default=5,
-                        help='Anzahl der Eval-Episoden')
+                        help='Number of evaluation episodes')
     parser.add_argument('--no-render', action='store_true',
-                        help='Deaktiviere Rendering bei Evaluation')
+                        help='Disable rendering during evaluation')
 
     args = parser.parse_args()
 
     if args.mode == 'train':
         print("=" * 60)
-        print("Drohnen-RL Training mit Ray RLlib")
+        print("Drone RL Training with Ray RLlib")
         print("=" * 60)
-        print(f"Algorithmus: {args.algorithm}")
+        print(f"Algorithm: {args.algorithm}")
         print(f"Timesteps: {args.timesteps}")
-        print(f"Modell-Pfad: {args.model_path}")
+        print(f"Model Path: {args.model_path}")
         print("=" * 60)
 
         train_with_rllib(
@@ -344,11 +344,11 @@ if __name__ == "__main__":
 
     elif args.mode == 'eval':
         print("=" * 60)
-        print("Drohnen-RL Evaluation mit Ray RLlib")
+        print("Drone RL Evaluation with Ray RLlib")
         print("=" * 60)
-        print(f"Algorithmus: {args.algorithm}")
-        print(f"Modell-Pfad: {args.model_path}")
-        print(f"Episoden: {args.episodes}")
+        print(f"Algorithm: {args.algorithm}")
+        print(f"Model Path: {args.model_path}")
+        print(f"Episodes: {args.episodes}")
         print(f"Rendering: {'OFF' if args.no_render else 'ON'}")
         print("=" * 60)
 
