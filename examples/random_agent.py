@@ -137,7 +137,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Drone Environment with Random/Hover Agent')
     parser.add_argument('--episodes', type=int, default=5, help='Number of episodes')
-    parser.add_argument('--steps', type=int, default=500, help='Max steps per episode')
+    parser.add_argument('--steps', type=int, default=5000, help='Max steps per episode')
     parser.add_argument('--render', action='store_true', help='Enable visualization')
     parser.add_argument('--agent', type=str, default='random', choices=['random', 'hover'],
                         help='Agent type: random or hover')

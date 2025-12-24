@@ -7,8 +7,11 @@ Installation:
 Usage:
     python training.py --algorithm PPO --timesteps 100000
 """
+import logging
 import sys
 from pathlib import Path
+
+from ray.rllib.env.single_agent_episode import SingleAgentEpisode
 
 # Add src/ to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -17,6 +20,35 @@ import argparse
 import numpy as np
 import os
 from src.drone_env import RLlibDroneEnv
+from ray.rllib.algorithms.callbacks import DefaultCallbacks
+
+logger = logging.getLogger(__name__)
+
+
+class CustomMetricsCallback(DefaultCallbacks):
+    """Custom callback to log episode metrics to TensorBoard."""
+
+    def on_episode_end(self, episode: SingleAgentEpisode, env_runner=None, metrics_logger=None, env=None, env_index=None, rl_module=None, **kwargs):
+        """
+        Logs custom metrics at the end of each episode.
+
+        Extracts episode_time from the last info dict and logs it to TensorBoard.
+        RLlib will automatically compute min/mean/max across episodes.
+        """
+        # Get the last info dict from the episode
+        last_info = episode.infos[-1]
+        if metrics_logger is None:
+            logger.warning("metrics_logger is None. Custom metrics won't be visible")
+            return
+
+        if last_info and "episode_time" in last_info:
+            metrics_logger.log_value("episode_time", last_info["episode_time"], reduce="mean")
+
+        if last_info and "distance_to_target" in last_info:
+            metrics_logger.log_value("final_distance_to_target", last_info["distance_to_target"], reduce="mean")
+
+        if last_info and "distance_covered" in last_info:
+            metrics_logger.log_value("distance_covered", last_info["distance_covered"], reduce="mean")
 
 
 def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../models/drone_model'):
@@ -53,10 +85,10 @@ def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../mode
 
     # Environment configuration
     env_config = {
-        "max_steps": 100,
+        "max_steps": 1000, # ~16 seconds
         "render_mode": None,
         "enable_crash_detection": True,
-        "dt": 0.02,
+        "dt": 1.0/60, # 60 fps
         "use_wind": False
     }
 
@@ -66,6 +98,7 @@ def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../mode
             PPOConfig()
             .environment(RLlibDroneEnv, env_config=env_config)
             .framework("torch")
+            .callbacks(CustomMetricsCallback)
             .training(
                 lr=3e-4,
                 train_batch_size=2048,
@@ -91,6 +124,7 @@ def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../mode
             SACConfig()
             .environment(RLlibDroneEnv, env_config=env_config)
             .framework("torch")
+            .callbacks(CustomMetricsCallback)
             .training(
                 lr=3e-4,
                 train_batch_size=256,
@@ -114,6 +148,7 @@ def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../mode
             APPOConfig()
             .environment(RLlibDroneEnv, env_config=env_config)
             .framework("torch")
+            .callbacks(CustomMetricsCallback)
             .training(
                 lr=3e-4,
                 train_batch_size=2048,

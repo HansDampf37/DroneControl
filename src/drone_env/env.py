@@ -109,7 +109,7 @@ class DroneEnv(gym.Env):
             dtype=np.float32
         )
 
-        space_side_length = 50
+        self.space_side_length = 50
         max_wind_velocity = self.wind.strength_range[1]
 
         # Observation Space
@@ -119,7 +119,7 @@ class DroneEnv(gym.Env):
         # [9:12]  - Angular velocity (wx, wy, wz)
         # [12:15] - Wind vector absolute (wx, wy, wz)
         obs_low = np.array(
-            [-space_side_length] * 3 +  # relative position
+            [-self.space_side_length] * 3 +  # relative position
             [-self.max_velocity_component] * 3 +  # velocity
             [-np.pi] * 3 +  # Euler angles
             [-self.max_angular_velocity_component] * 3 +  # angular velocity
@@ -127,7 +127,7 @@ class DroneEnv(gym.Env):
             dtype=np.float32
         )
         obs_high = np.array(
-            [space_side_length] * 3 + # relative position
+            [self.space_side_length] * 3 + # relative position
             [self.max_velocity_component] * 3 +  # velocity
             [np.pi] * 3 +  # Euler angles
             [self.max_angular_velocity_component] * 3 +  # angular velocity
@@ -140,11 +140,12 @@ class DroneEnv(gym.Env):
             dtype=np.float32
         )
 
-        self.max_dist_to_target = np.sqrt(3 * space_side_length ** 2)
+        self.max_dist_to_target = np.sqrt(3 * self.space_side_length ** 2)
 
         # Environment state
         self.target_position = np.zeros(3, dtype=np.float32)
         self.step_count = 0
+        self.initial_distance = 0
 
         # Rendering
         self.renderer = DroneEnvRenderer(render_mode=render_mode)
@@ -175,6 +176,7 @@ class DroneEnv(gym.Env):
 
         # Random target point
         self.target_position = self._generate_random_target()
+        self.initial_distance = np.linalg.norm(self.target_position - self.drone.position)
 
         # Reset wind
         self.wind.reset()
@@ -229,11 +231,13 @@ class DroneEnv(gym.Env):
         # Termination
         self.step_count += 1
         crashed = self._check_crash()
-        terminated = crashed  # Episode ends on crash
+        out_of_bounds = self._check_out_of_bounds()
+        terminated = crashed or out_of_bounds # Episode ends on crash or if drone leaves space
         truncated = self.step_count >= self.max_steps
 
         info = self._get_info()
         info['crashed'] = crashed  # Add crash info
+        info['out_of_bounds'] = out_of_bounds
 
         return observation, reward, terminated, truncated, info
 
@@ -249,13 +253,9 @@ class DroneEnv(gym.Env):
             Random target position as [x, y, z] array in meters.
         """
         # Random position in spherical coordinates
-        distance = np.random.uniform(0.0, self.max_dist_to_target // 2)
-        azimuth = np.random.uniform(0, 2 * np.pi)
-        elevation = np.random.uniform(-np.pi / 4, np.pi / 4)
-
-        x = distance * np.cos(elevation) * np.cos(azimuth)
-        y = distance * np.cos(elevation) * np.sin(azimuth)
-        z = distance * np.sin(elevation)
+        x = np.random.uniform(-self.space_side_length // 2, self.space_side_length // 2)
+        y = np.random.uniform(-self.space_side_length // 2, self.space_side_length // 2)
+        z = np.random.uniform(-self.space_side_length // 2, self.space_side_length // 2)
 
         return np.array([x, y, z], dtype=np.float32)
 
@@ -323,6 +323,9 @@ class DroneEnv(gym.Env):
             target_position=self.target_position
         )
 
+    def _check_out_of_bounds(self) -> bool:
+        return np.any(np.abs(self.drone.position) > self.space_side_length / 2)
+
     def _get_info(self) -> Dict[str, Any]:
         """
         Returns additional information about the current state.
@@ -335,11 +338,14 @@ class DroneEnv(gym.Env):
             - step_count: Current step number in episode
         """
         distance = np.linalg.norm(self.target_position - self.drone.position)
+        distance_progress = self.initial_distance - distance
         return {
             "distance_to_target": float(distance),
             "position": self.drone.position.copy(),
             "target_position": self.target_position.copy(),
             "step_count": self.step_count,
+            "episode_time": self.step_count * self.dt,
+            "distance_progress": distance_progress,
         }
 
     def render(self):
