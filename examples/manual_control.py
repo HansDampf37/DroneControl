@@ -41,7 +41,7 @@ class ManualDroneController:
         self.env = DroneEnv(
             max_steps=10000,
             render_mode="human",
-            enable_crash_detection=False,  # No crashes during testing
+            enable_crash_detection=False,
             dt=self.dt,
         )
 
@@ -53,6 +53,10 @@ class ManualDroneController:
         self.running = True
         self.paused = False
 
+        # Episode tracking
+        self.episode_count = 0
+        self.total_steps = 0
+
         # FPS control
         self.target_fps = 1.0 / self.dt  # Target FPS based on dt
         self.target_frame_time = self.dt  # Time per frame in seconds
@@ -63,7 +67,7 @@ class ManualDroneController:
 
         # Reset environment
         self.obs, self.info = self.env.reset()
-
+        self.episode_count = 1
         print("=" * 60)
         print("MANUAL DRONE CONTROL")
         print("=" * 60)
@@ -172,7 +176,8 @@ class ManualDroneController:
         self.obs, self.info = self.env.reset()
         self.motor_powers[:] = 0.0
         self.motor_active[:] = False
-        print("\n>>> RESET: Position and orientation reset <<<\n")
+        self.episode_count += 1
+        print(f"\n>>> RESET: Starting Episode {self.episode_count} <<<\n")
 
     def run(self):
         """Main control loop."""
@@ -197,6 +202,28 @@ class ManualDroneController:
 
                 # Step simulation with current motor powers
                 self.obs, reward, terminated, truncated, self.info = self.env.step(self.motor_powers)
+
+                # Check if episode ended (failed)
+                if terminated or truncated:
+                    reason = "terminated" if terminated else "truncated"
+                    print(f"\n{'='*60}")
+                    print(f"EPISODE {self.episode_count} FAILED ({reason.upper()})!")
+                    print(f"  Total steps in episode: {step}")
+                    print(f"  Total steps overall: {self.total_steps + step}")
+                    if terminated:
+                        print(f"  Reason: Episode terminated (likely crash or bounds violation)")
+                    else:
+                        print(f"  Reason: Episode truncated (max steps reached)")
+                    print(f"{'='*60}")
+
+                    # Update total steps
+                    self.total_steps += step
+                    step = 0
+
+                    # Automatically start new episode
+                    print(f"Starting new episode...")
+                    self.reset()
+                    continue
 
                 # Render visualization (environment has its own FPS control)
                 self.env.render()

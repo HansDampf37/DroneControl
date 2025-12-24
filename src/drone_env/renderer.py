@@ -18,7 +18,7 @@ class DroneEnvRenderer:
     - Front View (side view of XZ plane)
     """
 
-    def __init__(self, render_mode: Optional[str] = None):
+    def __init__(self, render_mode: Optional[str] = None, space_side_length: float = 2.0):
         """
         Initializes the renderer.
 
@@ -27,8 +27,15 @@ class DroneEnvRenderer:
                 - "human": Interactive display for visualization
                 - "rgb_array": Returns RGB array for video recording
                 - None: No rendering
+            space_side_length: Size of the observation space cube (meters).
+                The renderer will show a grid slightly larger than this.
         """
         self.render_mode = render_mode
+        self.space_side_length = space_side_length
+
+        # Grid extends slightly beyond observation space (10% margin)
+        self.grid_margin = 0.2  # 20% margin
+        self.grid_limit = (space_side_length / 2) * (1 + self.grid_margin)
 
         # Matplotlib components
         self.fig = None
@@ -54,6 +61,8 @@ class DroneEnvRenderer:
             'wind_arrow': None,
             'info_text': None,
             'ground_line': None,
+            'boundary_box_top': None,
+            'boundary_box_front': None,
         }
 
     def initialize(self):
@@ -71,8 +80,8 @@ class DroneEnvRenderer:
         self.fig.subplots_adjust(hspace=0.3)
 
         # ========== TOP VIEW (Bird's eye view XY) ==========
-        self.ax_top.set_xlim(-30, 30)
-        self.ax_top.set_ylim(-30, 30)
+        self.ax_top.set_xlim(-self.grid_limit, self.grid_limit)
+        self.ax_top.set_ylim(-self.grid_limit, self.grid_limit)
         self.ax_top.set_aspect('equal')
         self.ax_top.grid(True, alpha=0.4, linestyle='--', linewidth=0.5)
         self.ax_top.set_xlabel('X (m)', fontsize=11)
@@ -80,8 +89,8 @@ class DroneEnvRenderer:
         self.ax_top.set_facecolor('#f0f0f0')
 
         # ========== FRONT VIEW (Side view XZ) ==========
-        self.ax_front.set_xlim(-30, 30)
-        self.ax_front.set_ylim(-30, 30)
+        self.ax_front.set_xlim(-self.grid_limit, self.grid_limit)
+        self.ax_front.set_ylim(-self.grid_limit, self.grid_limit)
         self.ax_front.set_aspect('equal')
         self.ax_front.grid(True, alpha=0.4, linestyle='--', linewidth=0.5)
         self.ax_front.set_xlabel('X (m)', fontsize=11)
@@ -135,6 +144,9 @@ class DroneEnvRenderer:
 
         # Update title
         self.ax_top.set_title(f'Top View - Step: {step_count}', fontsize=12, fontweight='bold')
+
+        # ========== DRAW BOUNDARY BOX ==========
+        self._render_boundary_box(first_render)
 
         # ========== DRAW DRONE ==========
         self._render_drone(position, first_render)
@@ -203,6 +215,43 @@ class DroneEnvRenderer:
             self.ax_front.add_patch(self._render_objects['drone_circle_front'])
         else:
             self._render_objects['drone_circle_front'].center = (position[0], position[2])
+
+    def _render_boundary_box(self, first_render: bool):
+        """Renders the observation space boundary box."""
+        from matplotlib.patches import Rectangle
+
+        boundary = self.space_side_length / 2
+
+        if first_render:
+            # TOP VIEW: Square boundary in XY plane
+            self._render_objects['boundary_box_top'] = Rectangle(
+                (-boundary, -boundary),
+                self.space_side_length,
+                self.space_side_length,
+                fill=False,
+                edgecolor='red',
+                linewidth=2,
+                linestyle='--',
+                alpha=0.6,
+                zorder=1,
+                label='Observation Space'
+            )
+            self.ax_top.add_patch(self._render_objects['boundary_box_top'])
+
+            # FRONT VIEW: Square boundary in XZ plane
+            self._render_objects['boundary_box_front'] = Rectangle(
+                (-boundary, -boundary),
+                self.space_side_length,
+                self.space_side_length,
+                fill=False,
+                edgecolor='red',
+                linewidth=2,
+                linestyle='--',
+                alpha=0.6,
+                zorder=1,
+                label='Observation Space'
+            )
+            self.ax_front.add_patch(self._render_objects['boundary_box_front'])
 
     def _render_rotors(
         self,

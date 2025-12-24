@@ -65,6 +65,13 @@ class DroneEnv(gym.Env):
         """
         super().__init__()
 
+        # Validate render_mode
+        if render_mode is not None and render_mode not in self.metadata["render_modes"]:
+            raise ValueError(
+                f"Invalid render_mode: {render_mode}. "
+                f"Supported modes: {self.metadata['render_modes']}"
+            )
+
         self.max_steps = max_steps
         self.dt = dt
         self.target_change_interval = target_change_interval
@@ -109,7 +116,7 @@ class DroneEnv(gym.Env):
             dtype=np.float32
         )
 
-        self.space_side_length = 50
+        self.space_side_length = 3
         max_wind_velocity = self.wind.strength_range[1]
 
         # Observation Space
@@ -119,7 +126,7 @@ class DroneEnv(gym.Env):
         # [9:12]  - Angular velocity (wx, wy, wz)
         # [12:15] - Wind vector absolute (wx, wy, wz)
         obs_low = np.array(
-            [-self.space_side_length] * 3 +  # relative position
+            [-self.space_side_length / 2] * 3 +  # relative position
             [-self.max_velocity_component] * 3 +  # velocity
             [-np.pi] * 3 +  # Euler angles
             [-self.max_angular_velocity_component] * 3 +  # angular velocity
@@ -127,7 +134,7 @@ class DroneEnv(gym.Env):
             dtype=np.float32
         )
         obs_high = np.array(
-            [self.space_side_length] * 3 + # relative position
+            [self.space_side_length / 2] * 3 + # relative position
             [self.max_velocity_component] * 3 +  # velocity
             [np.pi] * 3 +  # Euler angles
             [self.max_angular_velocity_component] * 3 +  # angular velocity
@@ -148,7 +155,7 @@ class DroneEnv(gym.Env):
         self.initial_distance = 0
 
         # Rendering
-        self.renderer = DroneEnvRenderer(render_mode=render_mode)
+        self.renderer = DroneEnvRenderer(render_mode=render_mode, space_side_length=self.space_side_length)
 
     def reset(
         self,
@@ -253,11 +260,19 @@ class DroneEnv(gym.Env):
             Random target position as [x, y, z] array in meters.
         """
         # Random position in spherical coordinates
-        x = np.random.uniform(-self.space_side_length // 2, self.space_side_length // 2)
-        y = np.random.uniform(-self.space_side_length // 2, self.space_side_length // 2)
-        z = np.random.uniform(-self.space_side_length // 2, self.space_side_length // 2)
+        # Ensure target is not at origin to avoid zero initial distance
+        min_distance = 1.0  # Minimum 1 meter from origin
 
-        return np.array([x, y, z], dtype=np.float32)
+        while True:
+            x = np.random.uniform(-self.space_side_length / 2, self.space_side_length / 2)
+            y = np.random.uniform(-self.space_side_length / 2, self.space_side_length / 2)
+            z = np.random.uniform(-self.space_side_length / 2, self.space_side_length / 2)
+
+            target = np.array([x, y, z], dtype=np.float32)
+
+            # Check if target is far enough from origin (drone starting position)
+            if np.linalg.norm(target) >= min_distance:
+                return target
 
     def _get_observation(self) -> np.ndarray:
         """
@@ -318,9 +333,7 @@ class DroneEnv(gym.Env):
 
         return self.drone.check_crash(
             z_velocity_threshold=self.crash_z_vel_threshold,
-            tilt_threshold_rad=self.crash_tilt_threshold,
-            max_distance=self.max_dist_to_target,
-            target_position=self.target_position
+            tilt_threshold_rad=self.crash_tilt_threshold
         )
 
     def _check_out_of_bounds(self) -> bool:

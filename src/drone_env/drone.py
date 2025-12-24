@@ -310,9 +310,7 @@ class Drone:
     def check_crash(
         self,
         z_velocity_threshold: float = -20.0,
-        tilt_threshold_rad: float = None,
-        max_distance: float = None,
-        target_position: np.ndarray = None
+        tilt_threshold_rad: float = None
     ) -> bool:
         """
         Checks if the drone has crashed.
@@ -320,7 +318,6 @@ class Drone:
         A crash is detected if any of the following conditions are met:
         - Vertical velocity exceeds the threshold (falling too fast)
         - Roll or pitch angle exceeds the tilt threshold (unstable orientation)
-        - Distance from target exceeds maximum allowed distance (lost control)
 
         Args:
             z_velocity_threshold: Threshold for vertical velocity in m/s.
@@ -329,10 +326,6 @@ class Drone:
             tilt_threshold_rad: Threshold for roll/pitch angles in radians.
                 If None, tilt checking is disabled. If absolute value of roll
                 or pitch exceeds this threshold, a crash is detected.
-            max_distance: Maximum allowed distance from target in meters.
-                If None, distance checking is disabled. Requires target_position.
-            target_position: Target position [x, y, z] in meters for distance check.
-                Required if max_distance is specified, otherwise ignored.
 
         Returns:
             True if crash is detected, False otherwise.
@@ -345,12 +338,6 @@ class Drone:
         if tilt_threshold_rad is not None:
             roll, pitch, _ = self.orientation
             if abs(roll) > tilt_threshold_rad or abs(pitch) > tilt_threshold_rad:
-                return True
-
-        # Too far from target
-        if max_distance is not None and target_position is not None:
-            distance = np.linalg.norm(target_position - self.position)
-            if distance > max_distance:
                 return True
 
         return False
