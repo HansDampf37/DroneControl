@@ -153,6 +153,7 @@ class DroneEnv(gym.Env):
         self.target_position = np.zeros(3, dtype=np.float32)
         self.step_count = 0
         self.initial_distance = 0
+        self.last_action = np.zeros(4, dtype=np.float32)  # For rendering motor thrusts
 
         # Rendering
         self.renderer = DroneEnvRenderer(render_mode=render_mode, space_side_length=self.space_side_length)
@@ -212,6 +213,9 @@ class DroneEnv(gym.Env):
             - info: Dictionary with additional information including 'crashed' flag
         """
         action = np.clip(action, 0.0, 1.0)
+
+        # Store action for rendering
+        self.last_action = action
 
         # Wind update
         self.wind.update(self.dt)
@@ -385,7 +389,9 @@ class DroneEnv(gym.Env):
             rotation_matrix=R,
             rotor_positions=self.drone.rotor_positions,
             step_count=self.step_count,
-            reward=self._compute_reward()
+            reward=self._compute_reward(),
+            motor_thrusts=self.last_action,
+            dt=self.dt
         )
 
     def close(self):

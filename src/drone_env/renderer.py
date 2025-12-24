@@ -41,28 +41,46 @@ class DroneEnvRenderer:
         self.fig = None
         self.ax_top = None
         self.ax_front = None
+        self.ax_side = None
+        self.ax_metrics = None
+
+        # Current motor thrusts and episode time (for visualization only)
+        self.current_motor_thrusts = np.zeros(4, dtype=np.float32)
 
         # Rendering objects for performance (reused across frames)
         self._render_objects = {
             'drone_circle_top': None,
             'drone_circle_front': None,
+            'drone_circle_side': None,
             'rotor_lines_top': [],
             'rotor_lines_front': [],
+            'rotor_lines_side': [],
             'rotor_circles_top': [],
             'rotor_circles_front': [],
+            'rotor_circles_side': [],
             'tilt_arrow_top': None,
             'tilt_arrow_front': None,
+            'tilt_arrow_side': None,
             'target_circle_top': None,
             'target_circle_front': None,
+            'target_circle_side': None,
             'target_cross_top': [],
             'target_cross_front': [],
+            'target_cross_side': [],
             'connection_line_top': None,
             'connection_line_front': None,
+            'connection_line_side': None,
             'wind_arrow': None,
+            'wind_text': None,
             'info_text': None,
             'ground_line': None,
+            'ground_line_side': None,
             'boundary_box_top': None,
             'boundary_box_front': None,
+            'boundary_box_side': None,
+            'motor_bars': [],
+            'motor_bar_labels': [],
+            'motor_bar_texts': [],
         }
 
     def initialize(self):
@@ -74,21 +92,24 @@ class DroneEnvRenderer:
         if self.render_mode == "human":
             plt.ion()
 
-        # 2 Subplots: Top view (XY), Bottom front view (XZ)
-        self.fig, (self.ax_top, self.ax_front) = plt.subplots(2, 1, figsize=(10, 14))
+        # Create 2x2 grid layout
+        self.fig, ((self.ax_top, self.ax_side), (self.ax_front, self.ax_metrics)) = plt.subplots(
+            2, 2, figsize=(16, 12)
+        )
         self.fig.set_facecolor('white')
-        self.fig.subplots_adjust(hspace=0.3)
+        self.fig.subplots_adjust(hspace=0.25, wspace=0.25)
 
-        # ========== TOP VIEW (Bird's eye view XY) ==========
+        # ========== TOP VIEW (Bird's eye view XY) - TOP LEFT ==========
         self.ax_top.set_xlim(-self.grid_limit, self.grid_limit)
         self.ax_top.set_ylim(-self.grid_limit, self.grid_limit)
         self.ax_top.set_aspect('equal')
         self.ax_top.grid(True, alpha=0.4, linestyle='--', linewidth=0.5)
         self.ax_top.set_xlabel('X (m)', fontsize=11)
         self.ax_top.set_ylabel('Y (m)', fontsize=11)
+        self.ax_top.set_title('Top View', fontsize=12, fontweight='bold')
         self.ax_top.set_facecolor('#f0f0f0')
 
-        # ========== FRONT VIEW (Side view XZ) ==========
+        # ========== FRONT VIEW (Side view XZ) - BOTTOM LEFT ==========
         self.ax_front.set_xlim(-self.grid_limit, self.grid_limit)
         self.ax_front.set_ylim(-self.grid_limit, self.grid_limit)
         self.ax_front.set_aspect('equal')
@@ -103,6 +124,26 @@ class DroneEnvRenderer:
             y=0, color='brown', linestyle='-', linewidth=2, alpha=0.5, label='Ground'
         )
 
+        # ========== SIDE VIEW (YZ plane) - TOP RIGHT ==========
+        self.ax_side.set_xlim(-self.grid_limit, self.grid_limit)
+        self.ax_side.set_ylim(-self.grid_limit, self.grid_limit)
+        self.ax_side.set_aspect('equal')
+        self.ax_side.grid(True, alpha=0.4, linestyle='--', linewidth=0.5)
+        self.ax_side.set_xlabel('Y (m)', fontsize=11)
+        self.ax_side.set_ylabel('Z (Height) (m)', fontsize=11)
+        self.ax_side.set_title('Side View', fontsize=12, fontweight='bold')
+        self.ax_side.set_facecolor('#f0f0f0')
+
+        # Ground line in side view
+        self._render_objects['ground_line_side'] = self.ax_side.axhline(
+            y=0, color='brown', linestyle='-', linewidth=2, alpha=0.5, label='Ground'
+        )
+
+        # ========== METRICS PANEL - BOTTOM RIGHT ==========
+        self.ax_metrics.set_xlim(0, 1)
+        self.ax_metrics.set_ylim(0, 1)
+        self.ax_metrics.axis('off')  # Hide axes for the metrics panel
+
     def render(
         self,
         position: np.ndarray,
@@ -114,7 +155,9 @@ class DroneEnvRenderer:
         rotation_matrix: np.ndarray,
         rotor_positions: np.ndarray,
         step_count: int,
-        reward: float
+        reward: float,
+        motor_thrusts: np.ndarray = None,
+        dt: float = 0.01
     ):
         """
         Renders the current scene.
@@ -130,6 +173,8 @@ class DroneEnvRenderer:
             rotor_positions: Nx3 array of rotor positions in body-frame.
             step_count: Current step number in the episode.
             reward: Current reward value.
+            motor_thrusts: Array of 4 motor thrust values in range [0, 1]. Default is None.
+            dt: Timestep duration in seconds for episode time calculation. Default is 0.01.
 
         Returns:
             RGB array if render_mode is "rgb_array", None otherwise.
@@ -137,13 +182,17 @@ class DroneEnvRenderer:
         if self.render_mode is None:
             return None
 
+        # Store motor thrusts and calculate episode time
+        if motor_thrusts is not None:
+            self.current_motor_thrusts = motor_thrusts
+        episode_time = step_count * dt
+
         # Create figure on first call
         first_render = self.fig is None
         if first_render:
             self.initialize()
 
-        # Update title
-        self.ax_top.set_title(f'Top View - Step: {step_count}', fontsize=12, fontweight='bold')
+        # Boundary boxes and legends are set once on first render
 
         # ========== DRAW BOUNDARY BOX ==========
         self._render_boundary_box(first_render)
@@ -166,13 +215,17 @@ class DroneEnvRenderer:
         # ========== DRAW INFO BOX ==========
         self._render_info(
             position, velocity, orientation, target_position,
-            wind_vector, step_count, reward
+            wind_vector, step_count, reward, episode_time
         )
+
+        # ========== DRAW MOTOR POWER BARS ==========
+        self._render_motor_bars(first_render)
 
         # Legends only on first render
         if first_render:
             self.ax_top.legend(loc='upper right', fontsize=9)
             self.ax_front.legend(loc='upper right', fontsize=9)
+            self.ax_side.legend(loc='upper right', fontsize=9)
 
         # Perform rendering
         if self.render_mode == "human":
@@ -216,6 +269,20 @@ class DroneEnvRenderer:
         else:
             self._render_objects['drone_circle_front'].center = (position[0], position[2])
 
+        # SIDE VIEW
+        if first_render:
+            self._render_objects['drone_circle_side'] = Circle(
+                (position[1], position[2]),
+                0.08,  # 8cm radius
+                color='#0066cc',
+                alpha=0.9,
+                zorder=5,
+                label='Drone'
+            )
+            self.ax_side.add_patch(self._render_objects['drone_circle_side'])
+        else:
+            self._render_objects['drone_circle_side'].center = (position[1], position[2])
+
     def _render_boundary_box(self, first_render: bool):
         """Renders the observation space boundary box."""
         from matplotlib.patches import Rectangle
@@ -253,6 +320,21 @@ class DroneEnvRenderer:
             )
             self.ax_front.add_patch(self._render_objects['boundary_box_front'])
 
+            # SIDE VIEW: Square boundary in YZ plane
+            self._render_objects['boundary_box_side'] = Rectangle(
+                (-boundary, -boundary),
+                self.space_side_length,
+                self.space_side_length,
+                fill=False,
+                edgecolor='red',
+                linewidth=2,
+                linestyle='--',
+                alpha=0.6,
+                zorder=1,
+                label='Observation Space'
+            )
+            self.ax_side.add_patch(self._render_objects['boundary_box_side'])
+
     def _render_rotors(
         self,
         position: np.ndarray,
@@ -268,8 +350,10 @@ class DroneEnvRenderer:
         if first_render:
             self._render_objects['rotor_lines_top'] = []
             self._render_objects['rotor_lines_front'] = []
+            self._render_objects['rotor_lines_side'] = []
             self._render_objects['rotor_circles_top'] = []
             self._render_objects['rotor_circles_front'] = []
+            self._render_objects['rotor_circles_side'] = []
 
         for i, (rotor_pos_body, color) in enumerate(zip(rotor_positions, rotor_colors)):
             # Transform rotor position from body-frame to world-frame
@@ -337,6 +421,34 @@ class DroneEnvRenderer:
                 )
                 self._render_objects['rotor_circles_front'][i].center = (rotor_x, rotor_z)
 
+            # --- SIDE VIEW: Rotors in YZ plane ---
+            if first_render:
+                line_side, = self.ax_side.plot(
+                    [position[1], rotor_y],
+                    [position[2], rotor_z],
+                    color='#666666',
+                    linewidth=1.5,
+                    zorder=4,
+                    alpha=0.8
+                )
+                self._render_objects['rotor_lines_side'].append(line_side)
+
+                rotor_circle_side = Circle(
+                    (rotor_y, rotor_z),
+                    0.04,  # 4cm radius
+                    color=color,
+                    alpha=0.8,
+                    zorder=6
+                )
+                self.ax_side.add_patch(rotor_circle_side)
+                self._render_objects['rotor_circles_side'].append(rotor_circle_side)
+            else:
+                self._render_objects['rotor_lines_side'][i].set_data(
+                    [position[1], rotor_y],
+                    [position[2], rotor_z]
+                )
+                self._render_objects['rotor_circles_side'][i].center = (rotor_y, rotor_z)
+
     def _render_orientation(
         self,
         position: np.ndarray,
@@ -387,6 +499,30 @@ class DroneEnvRenderer:
             self._render_objects['tilt_arrow_front'] = self.ax_front.arrow(
                 position[0], position[2],
                 tilt_x_front * tilt_scale_front, tilt_z_front * tilt_scale_front,
+                head_width=0.1,
+                head_length=0.1,
+                fc='#ff9900',
+                ec='#ff9900',
+                linewidth=2.5,
+                zorder=7,
+                alpha=0.9,
+                label='Tilt' if first_render else ''
+            )
+
+        # --- SIDE VIEW: Tilt in YZ plane ---
+        tilt_y_side = normal_world[1]
+        tilt_z_side = normal_world[2]
+
+        # Remove old arrow if present
+        if self._render_objects['tilt_arrow_side'] is not None:
+            self._render_objects['tilt_arrow_side'].remove()
+            self._render_objects['tilt_arrow_side'] = None
+
+        if abs(tilt_y_side) > 0.01 or abs(tilt_z_side - 1.0) > 0.01:
+            tilt_scale_side = 1.5
+            self._render_objects['tilt_arrow_side'] = self.ax_side.arrow(
+                position[1], position[2],
+                tilt_y_side * tilt_scale_side, tilt_z_side * tilt_scale_side,
                 head_width=0.1,
                 head_length=0.1,
                 fc='#ff9900',
@@ -512,30 +648,107 @@ class DroneEnvRenderer:
                 [position[2], target_position[2]]
             )
 
-    def _render_wind(self, wind_vector: np.ndarray, first_render: bool):
-        """Renders the wind vector."""
-        wind_scale = 3.0
-        wind_x = wind_vector[0] * wind_scale
-        wind_y = wind_vector[1] * wind_scale
-        wind_mag = np.linalg.norm([wind_x, wind_y])
+        # --- SIDE VIEW: Target in YZ plane ---
+        if first_render:
+            self._render_objects['target_circle_side'] = Circle(
+                (target_position[1], target_position[2]),
+                0.15,
+                color='#00cc00',
+                alpha=0.6,
+                zorder=4,
+                label='Target'
+            )
+            self.ax_side.add_patch(self._render_objects['target_circle_side'])
 
-        # Remove old wind arrow if present
+            # Target crosshair (Side View)
+            cross_size = 0.1
+            line1, = self.ax_side.plot(
+                [target_position[1] - cross_size, target_position[1] + cross_size],
+                [target_position[2], target_position[2]],
+                'g-', linewidth=2, zorder=5
+            )
+            line2, = self.ax_side.plot(
+                [target_position[1], target_position[1]],
+                [target_position[2] - cross_size, target_position[2] + cross_size],
+                'g-', linewidth=2, zorder=5
+            )
+            self._render_objects['target_cross_side'] = [line1, line2]
+
+            # Connection line to drone (Side View)
+            self._render_objects['connection_line_side'], = self.ax_side.plot(
+                [position[1], target_position[1]],
+                [position[2], target_position[2]],
+                'k--',
+                alpha=0.4,
+                linewidth=1.5,
+                zorder=1
+            )
+        else:
+            # Update positions
+            self._render_objects['target_circle_side'].center = (target_position[1], target_position[2])
+
+            cross_size = 0.1
+            self._render_objects['target_cross_side'][0].set_data(
+                [target_position[1] - cross_size, target_position[1] + cross_size],
+                [target_position[2], target_position[2]]
+            )
+            self._render_objects['target_cross_side'][1].set_data(
+                [target_position[1], target_position[1]],
+                [target_position[2] - cross_size, target_position[2] + cross_size]
+            )
+
+            self._render_objects['connection_line_side'].set_data(
+                [position[1], target_position[1]],
+                [position[2], target_position[2]]
+            )
+
+    def _render_wind(self, wind_vector: np.ndarray, first_render: bool):
+        """Renders the wind vector in the metrics panel."""
+        wind_mag_full = np.linalg.norm(wind_vector)
+
+        # Remove old wind arrow and text if present
         if self._render_objects['wind_arrow'] is not None:
             self._render_objects['wind_arrow'].remove()
             self._render_objects['wind_arrow'] = None
 
-        if wind_mag > 0.1:  # Only draw if wind is noticeable
-            self._render_objects['wind_arrow'] = self.ax_top.arrow(
-                -25, 25,
-                wind_x, wind_y,
-                head_width=0.7,
-                head_length=0.7,
-                fc='#cc0000',
-                ec='#cc0000',
-                linewidth=2,
-                alpha=0.8,
-                zorder=3,
-                label='Wind' if first_render else ''
+        if self._render_objects['wind_text'] is not None:
+            self._render_objects['wind_text'].remove()
+            self._render_objects['wind_text'] = None
+
+        if wind_mag_full > 0.1:  # Only draw if wind is noticeable
+            # Position for wind indicator in metrics panel (axes coordinates)
+            wind_x_pos = 0.15
+            wind_y_pos = 0.35
+
+            # Scale wind vector for visualization
+            wind_scale = 0.15  # Scale factor for arrow size
+            wind_dx = wind_vector[0] * wind_scale
+            wind_dy = wind_vector[1] * wind_scale
+
+            # Create arrow using axes annotation
+            self._render_objects['wind_arrow'] = self.ax_metrics.annotate(
+                '',
+                xy=(wind_x_pos + wind_dx, wind_y_pos + wind_dy),
+                xytext=(wind_x_pos, wind_y_pos),
+                arrowprops=dict(
+                    arrowstyle='->',
+                    lw=3,
+                    color='#cc0000',
+                    alpha=0.8
+                )
+            )
+
+            # Add wind magnitude text
+            wind_text = f'Wind: {wind_mag_full:.1f} m/s'
+            self._render_objects['wind_text'] = self.ax_metrics.text(
+                wind_x_pos,
+                wind_y_pos - 0.08,
+                wind_text,
+                fontsize=11,
+                ha='center',
+                va='top',
+                fontweight='bold',
+                color='#cc0000'
             )
 
     def _render_info(
@@ -546,9 +759,10 @@ class DroneEnvRenderer:
         target_position: np.ndarray,
         wind_vector: np.ndarray,
         step_count: int,
-        reward: float
+        reward: float,
+        episode_time: float,
     ):
-        """Renders the info box with status data."""
+        """Renders the info box with status data in the metrics panel."""
         distance = np.linalg.norm(target_position - position)
         velocity_mag = np.linalg.norm(velocity)
         wind_mag_full = np.linalg.norm(wind_vector)
@@ -558,7 +772,8 @@ class DroneEnvRenderer:
         pitch_deg = np.rad2deg(orientation[1])
         yaw_deg = np.rad2deg(orientation[2])
 
-        info_text = f'Step: {step_count}\n'
+        info_text = f'Time: {episode_time:.2f}s\n'
+        info_text += f'Step: {step_count}\n'
         info_text += f'Distance: {distance:.2f}m\n'
         info_text += f'Height: {position[2]:.2f}m\n'
         info_text += f'Velocity: {velocity_mag:.2f}m/s\n'
@@ -571,17 +786,86 @@ class DroneEnvRenderer:
         first_render = self._render_objects['info_text'] is None
 
         if first_render:
-            self._render_objects['info_text'] = self.ax_top.text(
-                0.02, 0.98,
+            self._render_objects['info_text'] = self.ax_metrics.text(
+                0.5, 0.95,  # Position in axes coordinates (centered, near top)
                 info_text,
-                transform=self.ax_top.transAxes,
-                fontsize=10,
+                fontsize=11,
                 verticalalignment='top',
+                horizontalalignment='center',
                 bbox=dict(boxstyle='round,pad=0.5', facecolor='yellow', alpha=0.7),
                 family='monospace'
             )
         else:
             self._render_objects['info_text'].set_text(info_text)
+
+    def _render_motor_bars(self, first_render: bool):
+        """Renders motor power bars in the metrics panel."""
+        from matplotlib.patches import Rectangle
+
+        # Bar parameters in axes coordinates
+        bar_width = 0.08
+        bar_max_height = 0.35
+        bar_x_start = 0.55  # Start position in axes coordinates
+        bar_x_spacing = 0.12  # Spacing between bars
+        bar_x_positions = [bar_x_start + i * bar_x_spacing for i in range(4)]
+        bar_y_base = 0.05  # Y position base in axes coordinates
+
+        if first_render:
+            # Create bars, labels, and text objects
+            self._render_objects['motor_bars'] = []
+            self._render_objects['motor_bar_labels'] = []
+            self._render_objects['motor_bar_texts'] = []
+
+            for i in range(4):
+                # Create bar rectangle
+                bar = Rectangle(
+                    (bar_x_positions[i], bar_y_base),
+                    bar_width,
+                    0.0,  # Initial height of 0
+                    facecolor='#ff0000',
+                    edgecolor='#990000',
+                    linewidth=2,
+                    alpha=0.7,
+                    clip_on=False
+                )
+                self.ax_metrics.add_patch(bar)
+                self._render_objects['motor_bars'].append(bar)
+
+                # Create label (M1, M2, M3, M4)
+                label = self.ax_metrics.text(
+                    bar_x_positions[i] + bar_width / 2,
+                    bar_y_base - 0.03,
+                    f'M{i+1}',
+                    fontsize=10,
+                    ha='center',
+                    va='top',
+                    fontweight='bold'
+                )
+                self._render_objects['motor_bar_labels'].append(label)
+
+                # Create power percentage text
+                power_text = self.ax_metrics.text(
+                    bar_x_positions[i] + bar_width / 2,
+                    bar_y_base + bar_max_height + 0.02,
+                    '0%',
+                    fontsize=9,
+                    ha='center',
+                    va='bottom',
+                    family='monospace'
+                )
+                self._render_objects['motor_bar_texts'].append(power_text)
+
+        # Update bar heights and text based on current motor thrusts
+        for i in range(4):
+            thrust = self.current_motor_thrusts[i]
+            bar_height = thrust * bar_max_height
+
+            # Update bar height
+            self._render_objects['motor_bars'][i].set_height(bar_height)
+
+            # Update power percentage text
+            power_percent = int(thrust * 100)
+            self._render_objects['motor_bar_texts'][i].set_text(f'{power_percent}%')
 
     def close(self):
         """Cleans up rendering resources."""
@@ -590,6 +874,8 @@ class DroneEnvRenderer:
             self.fig = None
             self.ax_top = None
             self.ax_front = None
+            self.ax_side = None
+            self.ax_metrics = None
         if self.render_mode == "human":
             plt.ioff()  # Exit interactive mode
 
