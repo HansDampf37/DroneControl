@@ -97,7 +97,7 @@ class DroneEnv(gym.Env):
             linear_drag_coef=0.01,
             angular_drag_coef=0.05,
             center_of_mass_offset=0.03,
-            pendulum_damping=0.5,
+            pendulum_damping=0.9,
         )
 
         # Wind simulation
@@ -238,13 +238,13 @@ class DroneEnv(gym.Env):
         # Termination
         self.step_count += 1
         crashed = self._check_crash()
-        out_of_bounds = self._check_out_of_bounds()
-        terminated = crashed or out_of_bounds # Episode ends on crash or if drone leaves space
+        # out_of_bounds = self._check_out_of_bounds()
+        terminated = crashed #or out_of_bounds # Episode ends on crash or if drone leaves space
         truncated = self.step_count >= self.max_steps
 
         info = self._get_info()
         info['crashed'] = crashed  # Add crash info
-        info['out_of_bounds'] = out_of_bounds
+        #info['out_of_bounds'] = out_of_bounds
 
         return observation, reward, terminated, truncated, info
 

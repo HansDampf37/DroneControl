@@ -26,7 +26,7 @@ class Drone:
         linear_drag_coef: float = 0.01,
         angular_drag_coef: float = 0.05,
         center_of_mass_offset: float = 0.03,
-        pendulum_damping: float = 0.5,
+        pendulum_damping: float = 0.9,
     ):
         """
         Initializes the drone with its physical properties.

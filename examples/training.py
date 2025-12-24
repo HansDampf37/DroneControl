@@ -47,8 +47,8 @@ class CustomMetricsCallback(DefaultCallbacks):
         if last_info and "distance_to_target" in last_info:
             metrics_logger.log_value("final_distance_to_target", last_info["distance_to_target"], reduce="mean")
 
-        if last_info and "distance_covered" in last_info:
-            metrics_logger.log_value("distance_covered", last_info["distance_covered"], reduce="mean")
+        if last_info and "distance_progress" in last_info:
+            metrics_logger.log_value("distance_progress", last_info["distance_progress"], reduce="mean")
 
 
 def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../models/drone_model'):
