@@ -90,7 +90,7 @@ class DroneEnv(gym.Env):
         # Create drone (only intrinsic properties)
         self.drone = Drone(
             mass=1.0,
-            arm_length=0.25,
+            arm_length=0.10,
             inertia=np.array([0.01, 0.01, 0.02]),
             thrust_coef=10.0,
             torque_coef=0.1,
@@ -313,9 +313,7 @@ class DroneEnv(gym.Env):
             Reward value in range [0.0, 1.0].
         """
         distance = np.linalg.norm(self.target_position - self.drone.position)
-        distance = np.clip(distance, 0, self.max_dist_to_target)
-        margin = (self.max_dist_to_target - distance) / self.max_dist_to_target
-        return float(margin ** 2)
+        return np.exp(-distance)
 
     def _check_crash(self) -> bool:
         """

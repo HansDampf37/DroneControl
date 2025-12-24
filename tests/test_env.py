@@ -127,7 +127,7 @@ def test_wind():
     for i in range(200):
         action = np.array([0.25] * 4)  # Hover
         obs, reward, terminated, truncated, info = env.step(action)
-        wind_vectors.append(env.wind_vector.copy())
+        wind_vectors.append(env.wind.get_vector().copy())
 
     wind_vectors = np.array(wind_vectors)
 

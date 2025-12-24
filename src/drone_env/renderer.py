@@ -192,7 +192,7 @@ class DroneEnvRenderer:
         if first_render:
             self._render_objects['drone_circle_top'] = Circle(
                 (position[0], position[1]),
-                0.3,
+                0.08,  # Reduced from 0.3 to 0.08m (8cm radius)
                 color='#0066cc',
                 alpha=0.9,
                 zorder=5,
@@ -206,7 +206,7 @@ class DroneEnvRenderer:
         if first_render:
             self._render_objects['drone_circle_front'] = Circle(
                 (position[0], position[2]),
-                0.3,
+                0.08,  # Reduced from 0.3 to 0.08m (8cm radius)
                 color='#0066cc',
                 alpha=0.9,
                 zorder=5,
@@ -262,7 +262,7 @@ class DroneEnvRenderer:
     ):
         """Renders the drone's rotors."""
         rotor_colors = ['#ff6666', '#ff6666', '#66ff66', '#66ff66']  # Red: CW, Green: CCW
-        rotor_scale = 3.0  # Scaling for better visualization
+        rotor_scale = 1.2
 
         # Initialize lists on first render
         if first_render:
@@ -287,7 +287,7 @@ class DroneEnvRenderer:
                     [position[0], rotor_x],
                     [position[1], rotor_y],
                     color='#666666',
-                    linewidth=2.5,
+                    linewidth=1.5,  # Reduced from 2.5
                     zorder=4,
                     alpha=0.8
                 )
@@ -295,7 +295,7 @@ class DroneEnvRenderer:
 
                 rotor_circle_top = Circle(
                     (rotor_x, rotor_y),
-                    0.15,
+                    0.04,  # Reduced from 0.15 to 0.04m (4cm radius)
                     color=color,
                     alpha=0.8,
                     zorder=6
@@ -315,7 +315,7 @@ class DroneEnvRenderer:
                     [position[0], rotor_x],
                     [position[2], rotor_z],
                     color='#666666',
-                    linewidth=2.5,
+                    linewidth=1.5,  # Reduced from 2.5
                     zorder=4,
                     alpha=0.8
                 )
@@ -323,7 +323,7 @@ class DroneEnvRenderer:
 
                 rotor_circle_front = Circle(
                     (rotor_x, rotor_z),
-                    0.15,
+                    0.04,  # Reduced from 0.15 to 0.04m (4cm radius)
                     color=color,
                     alpha=0.8,
                     zorder=6
@@ -363,8 +363,8 @@ class DroneEnvRenderer:
             self._render_objects['tilt_arrow_top'] = self.ax_top.arrow(
                 position[0], position[1],
                 tilt_x * tilt_scale, tilt_y * tilt_scale,
-                head_width=0.3,
-                head_length=0.25,
+                head_width=0.1,
+                head_length=0.1,
                 fc='#ff9900',
                 ec='#ff9900',
                 linewidth=2.5,
@@ -387,8 +387,8 @@ class DroneEnvRenderer:
             self._render_objects['tilt_arrow_front'] = self.ax_front.arrow(
                 position[0], position[2],
                 tilt_x_front * tilt_scale_front, tilt_z_front * tilt_scale_front,
-                head_width=0.3,
-                head_length=0.25,
+                head_width=0.1,
+                head_length=0.1,
                 fc='#ff9900',
                 ec='#ff9900',
                 linewidth=2.5,
@@ -408,7 +408,7 @@ class DroneEnvRenderer:
         if first_render:
             self._render_objects['target_circle_top'] = Circle(
                 (target_position[0], target_position[1]),
-                1.0,
+                0.15,
                 color='#00cc00',
                 alpha=0.6,
                 zorder=4,
@@ -417,7 +417,7 @@ class DroneEnvRenderer:
             self.ax_top.add_patch(self._render_objects['target_circle_top'])
 
             # Target crosshair (Top View)
-            cross_size = 0.5
+            cross_size = 0.1  # Reduced from 0.5 to 0.1m
             line1, = self.ax_top.plot(
                 [target_position[0] - cross_size, target_position[0] + cross_size],
                 [target_position[1], target_position[1]],
@@ -443,7 +443,7 @@ class DroneEnvRenderer:
             # Update positions
             self._render_objects['target_circle_top'].center = (target_position[0], target_position[1])
 
-            cross_size = 0.5
+            cross_size = 0.1  # Reduced from 0.5 to 0.1m
             self._render_objects['target_cross_top'][0].set_data(
                 [target_position[0] - cross_size, target_position[0] + cross_size],
                 [target_position[1], target_position[1]]
@@ -462,7 +462,7 @@ class DroneEnvRenderer:
         if first_render:
             self._render_objects['target_circle_front'] = Circle(
                 (target_position[0], target_position[2]),
-                1.0,
+                0.15,  # Reduced from 1.0 to 0.15m (15cm radius)
                 color='#00cc00',
                 alpha=0.6,
                 zorder=4,
@@ -471,7 +471,7 @@ class DroneEnvRenderer:
             self.ax_front.add_patch(self._render_objects['target_circle_front'])
 
             # Target crosshair (Front View)
-            cross_size = 0.5
+            cross_size = 0.1  # Reduced from 0.5 to 0.1m
             line1, = self.ax_front.plot(
                 [target_position[0] - cross_size, target_position[0] + cross_size],
                 [target_position[2], target_position[2]],
@@ -497,7 +497,7 @@ class DroneEnvRenderer:
             # Update positions
             self._render_objects['target_circle_front'].center = (target_position[0], target_position[2])
 
-            cross_size = 0.5
+            cross_size = 0.1  # Reduced from 0.5 to 0.1m
             self._render_objects['target_cross_front'][0].set_data(
                 [target_position[0] - cross_size, target_position[0] + cross_size],
                 [target_position[2], target_position[2]]
