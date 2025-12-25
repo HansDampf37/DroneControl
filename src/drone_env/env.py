@@ -31,7 +31,7 @@ class DroneEnv(gym.Env):
         dt: float = 0.01,  # Timestep in seconds (100 Hz)
         target_change_interval: Optional[int] = None,  # Steps until target changes
         wind_strength_range: Tuple[float, float] = (0.0, 5.0),  # m/s
-        use_wind: bool = False,  # Enable wind simulation
+        use_wind: bool = True,
         render_mode: Optional[str] = None,
         # Crash detection parameters
         enable_crash_detection: bool = True,
