@@ -325,19 +325,20 @@ class DroneEnv(gym.Env):
 
     def _compute_reward(self) -> float:
         """
-        Computes the dense reward based on distance to target.
+        Computes the dense reward based on distance to target and the angular velocity.
 
-        The reward is calculated as: ((max_distance - distance) / max_distance)^2
+        The reward is calculated as: exp(-distance) / (angular_velocity ** 2 + 1)
         This quadratic formulation provides:
-        - Reward of 1.0 when exactly at target (distance = 0)
-        - Reward approaching 0.0 as distance approaches max_distance
+        - Reward of 1.0 when exactly at target (distance = 0) and no angular velocity
+        - Reward approaching 0.0 when distance or angular velocity grow
         - Stronger gradient near the target for better learning
 
         Returns:
             Reward value in range [0.0, 1.0].
         """
         distance = np.linalg.norm(self.target_position - self.drone.position)
-        return np.exp(-distance)
+        angular_vel_magnitude = np.linalg.norm(self.drone.angular_velocity)
+        return 0.5 * (np.exp(-distance) + 1 / (angular_vel_magnitude ** 2 + 1))
 
     def _check_crash(self) -> bool:
         """
