@@ -37,18 +37,27 @@ class CustomMetricsCallback(DefaultCallbacks):
         """
         # Get the last info dict from the episode
         last_info = episode.infos[-1]
+
         if metrics_logger is None:
             logger.warning("metrics_logger is None. Custom metrics won't be visible")
             return
 
+        metrics_logger.log_value("termination_reason/truncated", 1 if episode.is_truncated else 0)
+
+        if last_info and "out_of_bounds" in last_info:
+            metrics_logger.log_value("termination_reason/out_of_bounds", 1 if last_info["out_of_bounds"] else 0)
+
+        if last_info and "crashed" in last_info:
+            metrics_logger.log_value("termination_reason/crashed", 1 if last_info["crashed"] else 0)
+
         if last_info and "episode_time" in last_info:
-            metrics_logger.log_value("episode_time", last_info["episode_time"], reduce="mean")
+            metrics_logger.log_value("episode_time", last_info["episode_time"])
 
         if last_info and "distance_to_target" in last_info:
-            metrics_logger.log_value("final_distance_to_target", last_info["distance_to_target"], reduce="mean")
+            metrics_logger.log_value("distance/final_distance_to_target", last_info["distance_to_target"])
 
         if last_info and "distance_progress" in last_info:
-            metrics_logger.log_value("distance_progress", last_info["distance_progress"], reduce="mean")
+            metrics_logger.log_value("distance/distance_progress", last_info["distance_progress"])
 
 
 def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../models/drone_model'):

@@ -13,12 +13,13 @@ class DroneEnv(gym.Env):
 
     The drone (X-configuration) must fly to a target point and stay there.
 
-    - Action Space: 4 motors, each 0-1 (0-100% thrust)
-    - Observation Space: Relative position to target, velocity, orientation (Euler angles),
-                         angular velocity, wind vector
+    - Action Space: 4 motors, each [-1, 1] for thrust changes (positive increases thrust)
+    - Observation Space: Relative position to target, velocity, acceleration (linear),
+                         orientation (Euler angles), angular velocity, angular acceleration,
+                         wind vector
     - Physics: Simplified model with forces perpendicular to rotor plane, scaled by motor power
     - Wind: Dynamic, changes over time (Ornstein-Uhlenbeck process)
-    - Reward: Dense reward function: ((max_distance - distance) / max_distance) ** 2
+    - Reward: Dense reward function: exp(-distance)
     - Termination: After fixed max_steps or when drone crashes
     """
 
@@ -96,7 +97,7 @@ class DroneEnv(gym.Env):
             torque_coef=0.1,
             linear_drag_coef=0.01,
             angular_drag_coef=0.05,
-            center_of_mass_offset=0.03,
+            center_of_mass_offset=0.05,
             pendulum_damping=0.9,
         )
 
@@ -108,9 +109,9 @@ class DroneEnv(gym.Env):
             enabled=use_wind
         )
 
-        # Action Space: 4 motors, each 0-1
+        # Action Space: 4 motors, each [-1, 1] for thrust changes
         self.action_space = spaces.Box(
-            low=0.0,
+            low=-1.0,
             high=1.0,
             shape=(4,),
             dtype=np.float32
@@ -119,26 +120,39 @@ class DroneEnv(gym.Env):
         self.space_side_length = 3
         max_wind_velocity = self.wind.strength_range[1]
 
+        # Maximum acceleration bounds (reasonable physical limits for a drone)
+        self.max_acceleration = 50.0  # m/s^2
+        self.max_angular_acceleration = 100.0  # rad/s^2
+
         # Observation Space
         # [0:3]   - Position relative to target (x, y, z)
         # [3:6]   - Linear velocity (vx, vy, vz)
-        # [6:9]   - Orientation as Euler angles (roll, pitch, yaw)
-        # [9:12]  - Angular velocity (wx, wy, wz)
-        # [12:15] - Wind vector absolute (wx, wy, wz)
+        # [6:9]   - Linear acceleration (ax, ay, az)
+        # [9:12]  - Orientation as Euler angles (roll, pitch, yaw)
+        # [12:15] - Angular velocity (wx, wy, wz)
+        # [15:18] - Angular acceleration (awx, awy, awz)
+        # [18:21] - Normal vector (drone facing direction, unit vector)
+        # [21:24] - Wind vector absolute (wx, wy, wz)
         obs_low = np.array(
             [-self.space_side_length / 2] * 3 +  # relative position
             [-self.max_velocity_component] * 3 +  # velocity
+            [-self.max_acceleration] * 3 +  # linear acceleration
             [-np.pi] * 3 +  # Euler angles
             [-self.max_angular_velocity_component] * 3 +  # angular velocity
-            [-max_wind_velocity] * 3,   # wind
+            [-self.max_angular_acceleration] * 3 +  # angular acceleration
+            [-1.0] * 3 +  # normal vector (unit vector, each component in [-1, 1])
+            [-max_wind_velocity] * 3,  # wind
             dtype=np.float32
         )
         obs_high = np.array(
             [self.space_side_length / 2] * 3 + # relative position
             [self.max_velocity_component] * 3 +  # velocity
+            [self.max_acceleration] * 3 +  # linear acceleration
             [np.pi] * 3 +  # Euler angles
             [self.max_angular_velocity_component] * 3 +  # angular velocity
-            [max_wind_velocity] * 3,   # wind
+            [self.max_angular_acceleration] * 3 +  # angular acceleration
+            [1.0] * 3 +  # normal vector (unit vector, each component in [-1, 1])
+            [max_wind_velocity] * 3, # wind
             dtype=np.float32
         )
         self.observation_space = spaces.Box(
@@ -153,7 +167,6 @@ class DroneEnv(gym.Env):
         self.target_position = np.zeros(3, dtype=np.float32)
         self.step_count = 0
         self.initial_distance = 0
-        self.last_action = np.zeros(4, dtype=np.float32)  # For rendering motor thrusts
 
         # Rendering
         self.renderer = DroneEnvRenderer(render_mode=render_mode, space_side_length=self.space_side_length)
@@ -180,7 +193,7 @@ class DroneEnv(gym.Env):
 
         # Reset drone
         initial_orientation = np.random.uniform(-0.1, 0.1, 3).astype(np.float32)
-        self.drone.reset(initial_orientation=initial_orientation)
+        self.drone.reset(initial_orientation=initial_orientation, gravity=self.gravity)
 
         # Random target point
         self.target_position = self._generate_random_target()
@@ -201,8 +214,8 @@ class DroneEnv(gym.Env):
         Executes one simulation timestep.
 
         Args:
-            action: Array of 4 motor thrust values in range [0, 1].
-                Values outside this range are clipped.
+            action: Array of 4 motor thrust change values in range [-1, 1].
+                Positive values increase thrust, negative values decrease it.
 
         Returns:
             Tuple of (observation, reward, terminated, truncated, info) where:
@@ -212,10 +225,7 @@ class DroneEnv(gym.Env):
             - truncated: True if episode ended due to max_steps reached
             - info: Dictionary with additional information including 'crashed' flag
         """
-        action = np.clip(action, 0.0, 1.0)
-
-        # Store action for rendering
-        self.last_action = action
+        action = np.clip(action, -1.0, 1.0)
 
         # Wind update
         self.wind.update(self.dt)
@@ -227,7 +237,7 @@ class DroneEnv(gym.Env):
 
         # Physics update via Drone class with simulation parameters
         self.drone.update(
-            motor_thrusts=action,
+            thrust_changes=action,
             dt=self.dt,
             wind_vector=self.wind.get_vector(),
             gravity=self.gravity,
@@ -242,13 +252,13 @@ class DroneEnv(gym.Env):
         # Termination
         self.step_count += 1
         crashed = self._check_crash()
-        # out_of_bounds = self._check_out_of_bounds()
-        terminated = crashed #or out_of_bounds # Episode ends on crash or if drone leaves space
+        out_of_bounds = self._check_out_of_bounds()
+        terminated = crashed or out_of_bounds # Episode ends on crash or if drone leaves space
         truncated = self.step_count >= self.max_steps
 
         info = self._get_info()
         info['crashed'] = crashed  # Add crash info
-        #info['out_of_bounds'] = out_of_bounds
+        info['out_of_bounds'] = out_of_bounds
 
         return observation, reward, terminated, truncated, info
 
@@ -285,20 +295,26 @@ class DroneEnv(gym.Env):
         The observation includes:
         - [0:3]   Relative vector to target (target_pos - drone_pos)
         - [3:6]   Linear velocity of drone
-        - [6:9]   Orientation (Euler angles: roll, pitch, yaw)
-        - [9:12]  Angular velocity
-        - [12:15] Wind vector (absolute wind velocity)
+        - [6:9]   Linear acceleration of drone (from previous timestep)
+        - [9:12]  Orientation (Euler angles: roll, pitch, yaw)
+        - [12:15] Angular velocity
+        - [15:18] Angular acceleration (from previous timestep)
+        - [18:21] Normal vector (drone facing direction, unit vector)
+        - [21:24] Wind vector (absolute wind velocity)
 
         Returns:
-            Observation array with 15 elements.
+            Observation array with 24 elements.
         """
         vect_to_target = self.target_position - self.drone.position
         observation = np.concatenate([
             vect_to_target,                # [0:3]
             self.drone.velocity,           # [3:6]
-            self.drone.orientation,        # [6:9]
-            self.drone.angular_velocity,   # [9:12]
-            self.wind.get_vector(),        # [12:15]
+            self.drone.acceleration,       # [6:9]
+            self.drone.orientation,        # [9:12]
+            self.drone.angular_velocity,   # [12:15]
+            self.drone.angular_acceleration, # [15:18]
+            self.drone.get_normal(),       # [18:21]
+            self.wind.get_vector(),        # [21:24]
         ]).astype(np.float32)
 
         return observation
@@ -390,7 +406,7 @@ class DroneEnv(gym.Env):
             rotor_positions=self.drone.rotor_positions,
             step_count=self.step_count,
             reward=self._compute_reward(),
-            motor_thrusts=self.last_action,
+            motor_thrusts=self.drone.motor_thrusts,
             dt=self.dt
         )
 

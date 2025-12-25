@@ -27,6 +27,7 @@ class Drone:
         angular_drag_coef: float = 0.05,
         center_of_mass_offset: float = 0.03,
         pendulum_damping: float = 0.9,
+        time_to_full_thrust: float = 0.5,
     ):
         """
         Initializes the drone with its physical properties.
@@ -48,6 +49,8 @@ class Drone:
                 Creates a pendulum stabilization effect. Default is 0.03 m.
             pendulum_damping: Damping factor for pendulum stabilization effect.
                 Higher values provide stronger self-stabilization. Default is 0.5.
+            time_to_full_thrust: Time in seconds for motors to accelerate from 0% to 100%
+                thrust. Used to calculate motor acceleration. Default is 0.5 seconds.
         """
         # Intrinsic physical parameters of the drone
         self.mass = mass
@@ -59,6 +62,7 @@ class Drone:
         self.angular_drag_coef = angular_drag_coef
         self.center_of_mass_offset = center_of_mass_offset
         self.pendulum_damping = pendulum_damping
+        self.time_to_full_thrust = time_to_full_thrust
 
         # Rotor configuration (X-formation)
         # Motor 0: front-right (+x, +y), Motor 1: rear-left (-x, -y)
@@ -77,19 +81,42 @@ class Drone:
         # State
         self.position = np.zeros(3, dtype=np.float32)
         self.velocity = np.zeros(3, dtype=np.float32)
+        self.acceleration = np.zeros(3, dtype=np.float32)
         self.orientation = np.zeros(3, dtype=np.float32)  # Roll, Pitch, Yaw
         self.angular_velocity = np.zeros(3, dtype=np.float32)
+        self.angular_acceleration = np.zeros(3, dtype=np.float32)
+        self.motor_thrusts = np.zeros(4, dtype=np.float32)  # Current motor thrust levels [0, 1]
 
-    def reset(self, initial_orientation: np.ndarray = None):
+    def get_hover_thrust(self, gravity: float = 9.81) -> float:
+        """
+        Calculates the thrust value needed per motor to hover.
+
+        Args:
+            gravity: Gravitational acceleration in m/s². Default is 9.81 m/s² (Earth).
+
+        Returns:
+            Thrust value [0, 1] needed per motor to counteract gravity.
+        """
+        # Total thrust needed to counteract gravity
+        total_thrust_needed = self.mass * gravity
+        # Each motor needs to provide 1/4 of the total
+        thrust_per_motor = total_thrust_needed / 4.0
+        # Convert to normalized thrust value [0, 1]
+        return thrust_per_motor / self.thrust_coef
+
+    def reset(self, initial_orientation: np.ndarray = None, gravity: float = 9.81):
         """
         Resets the drone to its initial state.
 
         Args:
             initial_orientation: Optional initial orientation as [roll, pitch, yaw] in radians.
                 If None, a small random orientation is applied.
+            gravity: Gravitational acceleration in m/s². Used to initialize motor thrusts
+                to hover level. Default is 9.81 m/s².
         """
         self.position = np.zeros(3, dtype=np.float32)
         self.velocity = np.zeros(3, dtype=np.float32)
+        self.acceleration = np.zeros(3, dtype=np.float32)
 
         if initial_orientation is not None:
             self.orientation = initial_orientation.astype(np.float32)
@@ -98,10 +125,15 @@ class Drone:
             self.orientation = np.random.uniform(-0.1, 0.1, 3).astype(np.float32)
 
         self.angular_velocity = np.zeros(3, dtype=np.float32)
+        self.angular_acceleration = np.zeros(3, dtype=np.float32)
+
+        # Initialize motor thrusts to hover level
+        hover_thrust = self.get_hover_thrust(gravity)
+        self.motor_thrusts = np.full(4, hover_thrust, dtype=np.float32)
 
     def update(
         self,
-        motor_thrusts: np.ndarray,
+        thrust_changes: np.ndarray,
         dt: float,
         wind_vector: np.ndarray = None,
         gravity: float = 9.81,
@@ -111,12 +143,12 @@ class Drone:
         """
         Updates the drone physics for one timestep.
 
-        Simulates the physical behavior of the drone based on motor inputs and environmental
-        factors using simplified Euler integration.
+        Simulates the physical behavior of the drone based on motor thrust changes and
+        environmental factors using simplified Euler integration.
 
         Args:
-            motor_thrusts: Array of 4 normalized thrust values in range [0, 1], one per motor.
-                Order: [front-right, rear-left, front-left, rear-right].
+            thrust_changes: Array of 4 normalized thrust change values in range [-1, 1],
+                one per motor. Positive values increase thrust, negative values decrease it.
             dt: Timestep duration in seconds. Smaller values increase accuracy but require
                 more computation steps.
             wind_vector: Optional wind velocity vector [wx, wy, wz] in m/s.
@@ -129,6 +161,16 @@ class Drone:
         """
         if wind_vector is None:
             wind_vector = np.zeros(3, dtype=np.float32)
+
+        # Calculate motor acceleration based on dt and time_to_full_thrust
+        # We want to go from 0 to 1 in time_to_full_thrust seconds
+        # Number of steps = time_to_full_thrust / dt
+        # Per-step change for action=1.0: 1.0 / (time_to_full_thrust / dt) = dt / time_to_full_thrust
+        motor_acceleration = dt / self.time_to_full_thrust
+
+        # Update motor thrusts based on actions
+        self.motor_thrusts += thrust_changes * motor_acceleration
+        self.motor_thrusts = np.clip(self.motor_thrusts, 0.0, 1.0)
 
         # 1. Rotation from body-frame to world-frame
         R = self.get_rotation_matrix()
@@ -145,8 +187,8 @@ class Drone:
         max_speed_in_thrust_dir = 30.0  # m/s
         speed_factor = max(0.0, 1.0 - (velocity_in_thrust_direction / max_speed_in_thrust_dir))
 
-        # 5. Calculate thrust forces
-        thrusts = motor_thrusts * self.thrust_coef * speed_factor
+        # 5. Calculate thrust forces using current motor thrusts
+        thrusts = self.motor_thrusts * self.thrust_coef * speed_factor
 
         # 6. Total force in body-frame
         total_thrust_body = np.array([0, 0, np.sum(thrusts)], dtype=np.float32)
@@ -168,7 +210,7 @@ class Drone:
 
         # 10. Total force and linear acceleration
         total_force = total_force_world + gravity_force + drag_force
-        linear_acceleration = total_force / self.mass
+        self.acceleration = total_force / self.mass
 
         # 11. Calculate torque
         torque = self._compute_torque(thrusts)
@@ -182,14 +224,14 @@ class Drone:
         ], dtype=np.float32)
 
         # 13. Angular acceleration
-        angular_acceleration = (torque + pendulum_torque) / self.inertia
+        self.angular_acceleration = (torque + pendulum_torque) / self.inertia
 
         # 14. Integration (Euler method)
-        self.velocity += linear_acceleration * dt
+        self.velocity += self.acceleration * dt
         self.velocity = np.clip(self.velocity, -max_velocity, max_velocity)
         self.position += self.velocity * dt
 
-        self.angular_velocity += angular_acceleration * dt
+        self.angular_velocity += self.angular_acceleration * dt
         self.angular_velocity *= (1 - self.angular_drag_coef)
         self.angular_velocity = np.clip(
             self.angular_velocity,
@@ -265,19 +307,23 @@ class Drone:
         # Combined rotation: R = Rz @ Ry @ Rx
         return Rz @ Ry @ Rx
 
-    def get_state(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def get_normal(self):
+        return self.get_rotation_matrix() @ np.array([0, 0, 1])
+
+    def get_state(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         Returns the current state of the drone.
 
         Returns:
-            Tuple of (position, velocity, orientation, angular_velocity).
+            Tuple of (position, velocity, orientation, angular_velocity, motor_thrusts).
             All arrays are copied to prevent external modification.
         """
         return (
             self.position.copy(),
             self.velocity.copy(),
             self.orientation.copy(),
-            self.angular_velocity.copy()
+            self.angular_velocity.copy(),
+            self.motor_thrusts.copy()
         )
 
     def set_state(
@@ -285,7 +331,8 @@ class Drone:
         position: np.ndarray = None,
         velocity: np.ndarray = None,
         orientation: np.ndarray = None,
-        angular_velocity: np.ndarray = None
+        angular_velocity: np.ndarray = None,
+        motor_thrusts: np.ndarray = None
     ):
         """
         Sets the state of the drone.
@@ -297,6 +344,8 @@ class Drone:
                 If None, orientation is unchanged.
             angular_velocity: New angular velocity [wx, wy, wz] in rad/s.
                 If None, angular velocity is unchanged.
+            motor_thrusts: New motor thrust values [0, 1] for 4 motors.
+                If None, motor thrusts are unchanged.
         """
         if position is not None:
             self.position = position.astype(np.float32)
@@ -306,6 +355,8 @@ class Drone:
             self.orientation = orientation.astype(np.float32)
         if angular_velocity is not None:
             self.angular_velocity = angular_velocity.astype(np.float32)
+        if motor_thrusts is not None:
+            self.motor_thrusts = motor_thrusts.astype(np.float32)
 
     def check_crash(
         self,
