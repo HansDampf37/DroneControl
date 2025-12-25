@@ -78,7 +78,7 @@ def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../mode
     except ImportError:
         print("ERROR: Ray RLlib not installed!")
         print("Install with: pip install ray[rllib] torch")
-        return
+        return None
 
     # Initialize Ray
     if not ray.is_initialized():
@@ -170,7 +170,7 @@ def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../mode
         print(f"ERROR: Unknown algorithm '{algorithm}'")
         print("Available algorithms: PPO, SAC, APPO")
         ray.shutdown()
-        return
+        return None
 
     # Training
     print(f"\nStarting training for {total_timesteps} timesteps...")
