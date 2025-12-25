@@ -70,14 +70,14 @@ class DroneEnvRenderer:
             'connection_line_top': None,
             'connection_line_front': None,
             'connection_line_side': None,
+            'wind_arrow_top': None,
+            'wind_arrow_front': None,
+            'wind_arrow_side': None,
             'wind_arrow': None,
             'wind_text': None,
             'info_text': None,
             'ground_line': None,
             'ground_line_side': None,
-            'boundary_box_top': None,
-            'boundary_box_front': None,
-            'boundary_box_side': None,
             'motor_bars': [],
             'motor_bar_labels': [],
             'motor_bar_texts': [],
@@ -192,11 +192,6 @@ class DroneEnvRenderer:
         if first_render:
             self.initialize()
 
-        # Boundary boxes and legends are set once on first render
-
-        # ========== DRAW BOUNDARY BOX ==========
-        self._render_boundary_box(first_render)
-
         # ========== DRAW DRONE ==========
         self._render_drone(position, first_render)
 
@@ -282,58 +277,6 @@ class DroneEnvRenderer:
             self.ax_side.add_patch(self._render_objects['drone_circle_side'])
         else:
             self._render_objects['drone_circle_side'].center = (position[1], position[2])
-
-    def _render_boundary_box(self, first_render: bool):
-        """Renders the observation space boundary box."""
-        from matplotlib.patches import Rectangle
-
-        boundary = self.space_side_length / 2
-
-        if first_render:
-            # TOP VIEW: Square boundary in XY plane
-            self._render_objects['boundary_box_top'] = Rectangle(
-                (-boundary, -boundary),
-                self.space_side_length,
-                self.space_side_length,
-                fill=False,
-                edgecolor='red',
-                linewidth=2,
-                linestyle='--',
-                alpha=0.6,
-                zorder=1,
-                label='Observation Space'
-            )
-            self.ax_top.add_patch(self._render_objects['boundary_box_top'])
-
-            # FRONT VIEW: Square boundary in XZ plane
-            self._render_objects['boundary_box_front'] = Rectangle(
-                (-boundary, -boundary),
-                self.space_side_length,
-                self.space_side_length,
-                fill=False,
-                edgecolor='red',
-                linewidth=2,
-                linestyle='--',
-                alpha=0.6,
-                zorder=1,
-                label='Observation Space'
-            )
-            self.ax_front.add_patch(self._render_objects['boundary_box_front'])
-
-            # SIDE VIEW: Square boundary in YZ plane
-            self._render_objects['boundary_box_side'] = Rectangle(
-                (-boundary, -boundary),
-                self.space_side_length,
-                self.space_side_length,
-                fill=False,
-                edgecolor='red',
-                linewidth=2,
-                linestyle='--',
-                alpha=0.6,
-                zorder=1,
-                label='Observation Space'
-            )
-            self.ax_side.add_patch(self._render_objects['boundary_box_side'])
 
     def _render_rotors(
         self,
@@ -703,53 +646,99 @@ class DroneEnvRenderer:
             )
 
     def _render_wind(self, wind_vector: np.ndarray, first_render: bool):
-        """Renders the wind vector in the metrics panel."""
+        """Renders the wind vector in all three view panels and the metrics panel."""
         wind_mag_full = np.linalg.norm(wind_vector)
 
-        # Remove old wind arrow and text if present
-        if self._render_objects['wind_arrow'] is not None:
-            self._render_objects['wind_arrow'].remove()
-            self._render_objects['wind_arrow'] = None
-
-        if self._render_objects['wind_text'] is not None:
-            self._render_objects['wind_text'].remove()
-            self._render_objects['wind_text'] = None
+        # --- TOP VIEW: Wind in XY plane ---
+        # Remove old wind arrow if present
+        if self._render_objects['wind_arrow_top'] is not None:
+            self._render_objects['wind_arrow_top'].remove()
+            self._render_objects['wind_arrow_top'] = None
 
         if wind_mag_full > 0.1:  # Only draw if wind is noticeable
-            # Position for wind indicator in metrics panel (axes coordinates)
-            wind_x_pos = 0.15
-            wind_y_pos = 0.35
+            # Position wind indicator in corner of top view (world coordinates)
+            wind_origin_x = -self.grid_limit * 0.75
+            wind_origin_y = self.grid_limit * 0.75
 
             # Scale wind vector for visualization
-            wind_scale = 0.15  # Scale factor for arrow size
+            wind_scale = 0.3  # Scale factor for arrow size
             wind_dx = wind_vector[0] * wind_scale
             wind_dy = wind_vector[1] * wind_scale
 
-            # Create arrow using axes annotation
-            self._render_objects['wind_arrow'] = self.ax_metrics.annotate(
-                '',
-                xy=(wind_x_pos + wind_dx, wind_y_pos + wind_dy),
-                xytext=(wind_x_pos, wind_y_pos),
-                arrowprops=dict(
-                    arrowstyle='->',
-                    lw=3,
-                    color='#cc0000',
-                    alpha=0.8
-                )
+            # Create arrow
+            self._render_objects['wind_arrow_top'] = self.ax_top.arrow(
+                wind_origin_x, wind_origin_y,
+                wind_dx, wind_dy,
+                head_width=0.15,
+                head_length=0.1,
+                fc='#cc0000',
+                ec='#cc0000',
+                linewidth=2.5,
+                zorder=8,
+                alpha=0.9,
+                label='Wind' if first_render else ''
             )
 
-            # Add wind magnitude text
-            wind_text = f'Wind: {wind_mag_full:.1f} m/s'
-            self._render_objects['wind_text'] = self.ax_metrics.text(
-                wind_x_pos,
-                wind_y_pos - 0.08,
-                wind_text,
-                fontsize=11,
-                ha='center',
-                va='top',
-                fontweight='bold',
-                color='#cc0000'
+        # --- FRONT VIEW: Wind in XZ plane ---
+        # Remove old wind arrow if present
+        if self._render_objects['wind_arrow_front'] is not None:
+            self._render_objects['wind_arrow_front'].remove()
+            self._render_objects['wind_arrow_front'] = None
+
+        if wind_mag_full > 0.1:
+            # Position wind indicator in corner of front view (world coordinates)
+            wind_origin_x = -self.grid_limit * 0.75
+            wind_origin_z = self.grid_limit * 0.75
+
+            # Wind in XZ plane (X and Z components)
+            wind_scale = 0.3
+            wind_dx = wind_vector[0] * wind_scale
+            wind_dz = wind_vector[2] * wind_scale
+
+            # Create arrow
+            self._render_objects['wind_arrow_front'] = self.ax_front.arrow(
+                wind_origin_x, wind_origin_z,
+                wind_dx, wind_dz,
+                head_width=0.15,
+                head_length=0.1,
+                fc='#cc0000',
+                ec='#cc0000',
+                linewidth=2.5,
+                zorder=8,
+                alpha=0.9,
+                label='Wind' if first_render else ''
             )
+
+        # --- SIDE VIEW: Wind in YZ plane ---
+        # Remove old wind arrow if present
+        if self._render_objects['wind_arrow_side'] is not None:
+            self._render_objects['wind_arrow_side'].remove()
+            self._render_objects['wind_arrow_side'] = None
+
+        if wind_mag_full > 0.1:
+            # Position wind indicator in corner of side view (world coordinates)
+            wind_origin_y = -self.grid_limit * 0.75
+            wind_origin_z = self.grid_limit * 0.75
+
+            # Wind in YZ plane (Y and Z components)
+            wind_scale = 0.3
+            wind_dy = wind_vector[1] * wind_scale
+            wind_dz = wind_vector[2] * wind_scale
+
+            # Create arrow
+            self._render_objects['wind_arrow_side'] = self.ax_side.arrow(
+                wind_origin_y, wind_origin_z,
+                wind_dy, wind_dz,
+                head_width=0.15,
+                head_length=0.1,
+                fc='#cc0000',
+                ec='#cc0000',
+                linewidth=2.5,
+                zorder=8,
+                alpha=0.9,
+                label='Wind' if first_render else ''
+            )
+
 
     def _render_info(
         self,
@@ -805,7 +794,7 @@ class DroneEnvRenderer:
         # Bar parameters in axes coordinates
         bar_width = 0.08
         bar_max_height = 0.35
-        bar_x_start = 0.55  # Start position in axes coordinates
+        bar_x_start = 0.3  # Start position in axes coordinates
         bar_x_spacing = 0.12  # Spacing between bars
         bar_x_positions = [bar_x_start + i * bar_x_spacing for i in range(4)]
         bar_y_base = 0.05  # Y position base in axes coordinates

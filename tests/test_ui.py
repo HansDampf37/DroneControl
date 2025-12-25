@@ -20,7 +20,9 @@ def test_new_layout():
         dt=0.02,
         render_mode="human",
         use_wind=True,
-        wind_strength_range=(2.0, 5.0)  # Moderate wind
+        wind_strength_range=(2.0, 5.0), # Moderate wind
+        enable_crash_detection=False,
+        enable_out_of_bounds_detection=False,
     )
 
     # Reset environment
@@ -30,7 +32,7 @@ def test_new_layout():
 
     # Control pattern: vary motors to show different patterns
     try:
-        for step in range(300):
+        for step in range(3000):
             time = step * env.dt
 
             # Create a rotating pattern

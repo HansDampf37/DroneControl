@@ -21,8 +21,26 @@ import numpy as np
 import os
 from src.drone_env import RLlibDroneEnv
 from ray.rllib.algorithms.callbacks import DefaultCallbacks
+from ray.rllib.algorithms.ppo import PPOConfig
+from ray.rllib.algorithms.sac import SACConfig
+from ray.rllib.algorithms.appo import APPOConfig
+from ray.rllib.algorithms.ppo import PPO
+from ray.rllib.algorithms.sac import SAC
+from ray.rllib.algorithms.appo import APPO
+import ray
 
 logger = logging.getLogger(__name__)
+
+# Environment configuration
+env_config = {
+    "max_steps": 200, # 10 seconds
+    "render_mode": None,
+    "enable_crash_detection": True,
+    "dt": 1.0/20, # 20 fps
+    "use_wind": True
+}
+env_config_eval = env_config.copy()
+env_config_eval["render_mode"] = "human"
 
 
 class CustomMetricsCallback(DefaultCallbacks):
@@ -69,17 +87,6 @@ def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../mode
         total_timesteps: Number of training steps. Default is 100000.
         save_path: Path to save the trained model. Default is '../models/drone_model'.
     """
-    try:
-        from ray import tune, air
-        from ray.rllib.algorithms.ppo import PPOConfig
-        from ray.rllib.algorithms.sac import SACConfig
-        from ray.rllib.algorithms.appo import APPOConfig
-        import ray
-    except ImportError:
-        print("ERROR: Ray RLlib not installed!")
-        print("Install with: pip install ray[rllib] torch")
-        return None
-
     # Initialize Ray
     if not ray.is_initialized():
         ray.init(ignore_reinit_error=True, num_gpus=0)
@@ -91,15 +98,6 @@ def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../mode
     os.makedirs(save_path, exist_ok=True)
 
     print(f"Creating {algorithm} configuration...")
-
-    # Environment configuration
-    env_config = {
-        "max_steps": 1000, # ~16 seconds
-        "render_mode": None,
-        "enable_crash_detection": True,
-        "dt": 1.0/60, # 60 fps
-        "use_wind": False
-    }
 
     # Algorithm configuration
     if algorithm == 'PPO':
@@ -118,7 +116,7 @@ def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../mode
                 clip_param=0.2,
                 entropy_coeff=0.01,
                 use_critic=True,
-                use_gae=True
+                use_gae=True,
             )
             .env_runners(num_env_runners=15, num_envs_per_env_runner=1)
             .resources(num_gpus=0)
@@ -234,16 +232,6 @@ def evaluate_model(model_path, episodes=5, render=True, algorithm='PPO'):
         render: Whether to visualize the environment. Default is True.
         algorithm: Which algorithm was used for training ('PPO', 'SAC', 'APPO').
     """
-    try:
-        from ray.rllib.algorithms.ppo import PPO
-        from ray.rllib.algorithms.sac import SAC
-        from ray.rllib.algorithms.appo import APPO
-        from src.drone_env import DroneEnv
-        import ray
-    except ImportError:
-        print("ERROR: Ray RLlib not installed!")
-        return
-
     # Initialize Ray
     if not ray.is_initialized():
         ray.init(ignore_reinit_error=True, num_gpus=0)
@@ -267,8 +255,7 @@ def evaluate_model(model_path, episodes=5, render=True, algorithm='PPO'):
         return
 
     # Environment
-    render_mode = "human" if render else None
-    env = DroneEnv(max_steps=500, render_mode=render_mode)
+    env = RLlibDroneEnv(config=env_config_eval)
 
     # Get RLModule for inference (new API in RLlib 2.5+)
     rl_module = algo.get_module()

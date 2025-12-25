@@ -35,6 +35,7 @@ class DroneEnv(gym.Env):
         render_mode: Optional[str] = None,
         # Crash detection parameters
         enable_crash_detection: bool = True,
+        enable_out_of_bounds_detection: bool = True,
         crash_z_vel_threshold: float = -20.0,  # Drone falling faster than 20 m/s = crash
         crash_tilt_threshold: float = 80.0,  # Roll/pitch above this angle = crash (degrees)
     ):
@@ -57,6 +58,8 @@ class DroneEnv(gym.Env):
                 - "rgb_array": Returns RGB arrays for video recording
             enable_crash_detection: Whether to detect and terminate on crashes.
                 If True, episode ends when crash is detected. Default is True.
+            enable_out_of_bounds_detection: Whether to detect and terminate on large distances to the target position
+                If True, episode ends when the drone is too far away from the target. Default is True.
             crash_z_vel_threshold: Threshold for crash detection based on vertical velocity in m/s.
                 Negative values indicate downward motion. If drone falls faster than this value,
                 a crash is detected. Default is -20.0 m/s.
@@ -80,6 +83,7 @@ class DroneEnv(gym.Env):
 
         # Crash detection
         self.enable_crash_detection = enable_crash_detection
+        self.enable_out_of_bounds_detection = enable_out_of_bounds_detection
         self.crash_z_vel_threshold = crash_z_vel_threshold
         self.crash_tilt_threshold = np.deg2rad(crash_tilt_threshold)  # Convert to radians
 
@@ -104,7 +108,7 @@ class DroneEnv(gym.Env):
         # Wind simulation
         self.wind = Wind(
             strength_range=wind_strength_range,
-            theta=0.15,  # Mean reversion rate
+            theta=0.5,  # Mean reversion rate
             sigma=1.0,   # Volatility
             enabled=use_wind
         )
@@ -355,7 +359,10 @@ class DroneEnv(gym.Env):
         )
 
     def _check_out_of_bounds(self) -> bool:
-        return np.any(np.abs(self.drone.position) > self.space_side_length / 2)
+        if not self.enable_out_of_bounds_detection:
+            return False
+
+        return np.linalg.norm(self.drone.position - self.target_position) > self.max_dist_to_target
 
     def _get_info(self) -> Dict[str, Any]:
         """

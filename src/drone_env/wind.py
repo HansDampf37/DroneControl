@@ -17,7 +17,7 @@ class Wind:
     def __init__(
         self,
         strength_range: Tuple[float, float] = (0.0, 5.0),
-        theta: float = 0.15,
+        theta: float = 0.5,
         sigma: float = 1.0,
         enabled: bool = False
     ):
@@ -28,7 +28,7 @@ class Wind:
             strength_range: Tuple of (min, max) wind speeds in m/s.
                 Wind speed is clamped to this range. Default is (0.0, 5.0).
             theta: Mean reversion rate (how quickly wind returns to zero).
-                Higher values = faster return to calm. Default is 0.15.
+                Higher values = faster return to calm. Default is 0.5.
             sigma: Volatility (how much random variation occurs).
                 Higher values = more turbulent wind. Default is 1.0.
             enabled: Whether wind simulation is active. If False, wind is always zero.
@@ -70,7 +70,7 @@ class Wind:
         drift = -self.theta * self.vector * dt
 
         # Diffusion term: random perturbation
-        diffusion = self.sigma * np.random.normal(0, np.sqrt(dt), 3)
+        diffusion = self.sigma * np.random.normal([0] * 3, [np.sqrt(dt), np.sqrt(dt), np.sqrt(dt) / 5])
 
         # Update wind vector
         self.vector += drift + diffusion
