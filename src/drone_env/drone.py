@@ -1,395 +1,356 @@
 """
-Drone model for simulation.
-Encapsulates the physics and state of a quadcopter drone.
+Drone model for simulation (more physically grounded).
+Key changes vs. your version:
+- Motor dynamics: first-order lag (tau) instead of dt/time_to_full_thrust ramp
+- Thrust model: per-motor thrust = max_thrust_per_motor * cmd^2 (cmd in [0,1])
+- Orientation: quaternion state (avoids Euler integration artifacts)
+- Aerodynamic drag: Fd = -0.5*rho*CdA*|v_rel|*v_rel
+- Angular damping: torque = -k_w*omega - k_w2*|omega|*omega (dt-consistent)
+- Optional "pendulum stabilization" removed by default (kept as an optional feature flag)
 """
+
 import numpy as np
-from typing import Tuple
+from typing import Tuple, Optional
+
+
+def quat_normalize(q: np.ndarray) -> np.ndarray:
+    n = np.linalg.norm(q)
+    if n < 1e-12:
+        return np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
+    return (q / n).astype(np.float32)
+
+
+def quat_mul(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
+    # Hamilton product, q = [w, x, y, z]
+    w1, x1, y1, z1 = q1
+    w2, x2, y2, z2 = q2
+    return np.array(
+        [
+            w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+            w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+            w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+            w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+        ],
+        dtype=np.float32,
+    )
+
+
+def quat_to_rotation_matrix(q: np.ndarray) -> np.ndarray:
+    # q = [w, x, y, z]
+    w, x, y, z = q
+    ww, xx, yy, zz = w * w, x * x, y * y, z * z
+    wx, wy, wz = w * x, w * y, w * z
+    xy, xz, yz = x * y, x * z, y * z
+
+    return np.array(
+        [
+            [ww + xx - yy - zz, 2 * (xy - wz), 2 * (xz + wy)],
+            [2 * (xy + wz), ww - xx + yy - zz, 2 * (yz - wx)],
+            [2 * (xz - wy), 2 * (yz + wx), ww - xx - yy + zz],
+        ],
+        dtype=np.float32,
+    )
+
+
+def quat_from_euler(roll: float, pitch: float, yaw: float) -> np.ndarray:
+    # ZYX (yaw-pitch-roll)
+    cr = np.cos(roll * 0.5)
+    sr = np.sin(roll * 0.5)
+    cp = np.cos(pitch * 0.5)
+    sp = np.sin(pitch * 0.5)
+    cy = np.cos(yaw * 0.5)
+    sy = np.sin(yaw * 0.5)
+
+    w = cy * cp * cr + sy * sp * sr
+    x = cy * cp * sr - sy * sp * cr
+    y = cy * sp * cr + sy * cp * sr
+    z = sy * cp * cr - cy * sp * sr
+    return quat_normalize(np.array([w, x, y, z], dtype=np.float32))
+
+
+def euler_from_quat(q: np.ndarray) -> np.ndarray:
+    # returns roll, pitch, yaw (ZYX)
+    w, x, y, z = q
+
+    # roll (x-axis)
+    sinr_cosp = 2 * (w * x + y * z)
+    cosr_cosp = 1 - 2 * (x * x + y * y)
+    roll = np.arctan2(sinr_cosp, cosr_cosp)
+
+    # pitch (y-axis)
+    sinp = 2 * (w * y - z * x)
+    if abs(sinp) >= 1:
+        pitch = np.sign(sinp) * (np.pi / 2)
+    else:
+        pitch = np.arcsin(sinp)
+
+    # yaw (z-axis)
+    siny_cosp = 2 * (w * z + x * y)
+    cosy_cosp = 1 - 2 * (y * y + z * z)
+    yaw = np.arctan2(siny_cosp, cosy_cosp)
+
+    return np.array([roll, pitch, yaw], dtype=np.float32)
 
 
 class Drone:
     """
-    Quadcopter drone in X-configuration.
+    Quadcopter drone in X-configuration (physics-oriented).
 
-    Manages:
-    - Physical parameters (mass, inertia, etc.)
-    - State (position, velocity, orientation, etc.)
-    - Physics simulation (forces, torques, integration)
+    Notes on parameters:
+    - max_thrust_per_motor: Newton at cmd=1.0. Choose so hover cmd ~ 0.35..0.65.
+      Example: mass=1.0 kg => weight ~ 9.81 N => per-motor hover thrust ~ 2.45 N.
+      If max_thrust_per_motor=10 N, hover cmd ~ sqrt(2.45/10)=0.495.
+    - motor_tau: first-order time constant (s). Typical: 0.03..0.12 depending on prop/esc.
+    - CdA: drag area (m^2). Typical small quad: ~0.01..0.05.
+    - k_w, k_w2: rotational damping coefficients (N*m/(rad/s) and N*m/(rad/s)^2).
     """
 
     def __init__(
         self,
         mass: float = 1.0,
         arm_length: float = 0.25,
-        inertia: np.ndarray = None,
-        thrust_coef: float = 10.0,
-        torque_coef: float = 0.1,
-        linear_drag_coef: float = 0.01,
-        angular_drag_coef: float = 0.05,
+        inertia: Optional[np.ndarray] = None,  # [Ix, Iy, Iz]
+        max_thrust_per_motor: float = 10.0,  # N
+        yaw_moment_per_thrust: float = 0.02,  # Nm per N (very rough)
+        motor_tau: float = 0.08,  # s (first-order lag)
+        rho: float = 1.225,  # kg/m^3
+        CdA: float = 0.02,  # m^2
+        k_w: float = 0.02,  # N*m/(rad/s)
+        k_w2: float = 0.002,  # N*m/(rad/s)^2
+        enable_pendulum: bool = False,
         center_of_mass_offset: float = 0.03,
-        pendulum_damping: float = 0.9,
-        time_to_full_thrust: float = 0.5,
+        pendulum_k: float = 0.0,
     ):
-        """
-        Initializes the drone with its physical properties.
+        self.mass = float(mass)
+        self.arm_length = float(arm_length)
 
-        Args:
-            mass: Mass of the drone in kilograms. Default is 1.0 kg.
-            arm_length: Distance from center to each rotor in meters. Default is 0.25 m.
-            inertia: Moment of inertia tensor [Ix, Iy, Iz] in kg*m^2.
-                If None, defaults to [0.01, 0.01, 0.02] for a typical quadcopter.
-            thrust_coef: Thrust coefficient that maps motor input to force.
-                Higher values mean more thrust per motor input. Default is 10.0.
-            torque_coef: Torque coefficient for reactive torque from rotor spin.
-                Default is 0.1.
-            linear_drag_coef: Linear drag coefficient for air resistance.
-                Drag force scales linearly with velocity. Default is 0.01.
-            angular_drag_coef: Angular drag coefficient for rotational damping.
-                Reduces angular velocity over time. Default is 0.05.
-            center_of_mass_offset: Offset of center of mass from geometric center in meters.
-                Creates a pendulum stabilization effect. Default is 0.03 m.
-            pendulum_damping: Damping factor for pendulum stabilization effect.
-                Higher values provide stronger self-stabilization. Default is 0.5.
-            time_to_full_thrust: Time in seconds for motors to accelerate from 0% to 100%
-                thrust. Used to calculate motor acceleration. Default is 0.5 seconds.
-        """
-        # Intrinsic physical parameters of the drone
-        self.mass = mass
-        self.arm_length = arm_length
-        self.inertia = inertia if inertia is not None else np.array([0.01, 0.01, 0.02])
-        self.thrust_coef = thrust_coef
-        self.torque_coef = torque_coef
-        self.linear_drag_coef = linear_drag_coef
-        self.angular_drag_coef = angular_drag_coef
-        self.center_of_mass_offset = center_of_mass_offset
-        self.pendulum_damping = pendulum_damping
-        self.time_to_full_thrust = time_to_full_thrust
+        # Reasonable default inertia for a ~1kg, ~0.25m-arm quad if none is provided
+        self.inertia = (
+            inertia.astype(np.float32)
+            if inertia is not None
+            else np.array([0.02, 0.02, 0.04], dtype=np.float32)
+        )
 
-        # Rotor configuration (X-formation)
-        # Motor 0: front-right (+x, +y), Motor 1: rear-left (-x, -y)
-        # Motor 2: front-left (-x, +y), Motor 3: rear-right (+x, -y)
-        angle = np.pi / 4  # 45 degrees
-        self.rotor_positions = np.array([
-            [self.arm_length * np.cos(angle), self.arm_length * np.sin(angle), 0],      # Motor 0
-            [-self.arm_length * np.cos(angle), -self.arm_length * np.sin(angle), 0],    # Motor 1
-            [-self.arm_length * np.cos(angle), self.arm_length * np.sin(angle), 0],     # Motor 2
-            [self.arm_length * np.cos(angle), -self.arm_length * np.sin(angle), 0],     # Motor 3
-        ], dtype=np.float32)
+        self.max_thrust_per_motor = float(max_thrust_per_motor)
+        self.yaw_moment_per_thrust = float(yaw_moment_per_thrust)
+        self.motor_tau = max(1e-4, float(motor_tau))
 
-        # Rotor rotation directions (1 = CW, -1 = CCW)
-        self.rotor_directions = np.array([1, 1, -1, -1])
+        self.rho = float(rho)
+        self.CdA = float(CdA)
+
+        self.k_w = float(k_w)
+        self.k_w2 = float(k_w2)
+
+        # Optional pendulum-like restoring torque (default off)
+        self.enable_pendulum = bool(enable_pendulum)
+        self.center_of_mass_offset = float(center_of_mass_offset)
+        self.pendulum_k = float(pendulum_k)
+
+        # Rotor geometry (X)
+        angle = np.pi / 4
+        self.rotor_positions = np.array(
+            [
+                [self.arm_length * np.cos(angle), self.arm_length * np.sin(angle), 0.0],   # 0 front-right
+                [-self.arm_length * np.cos(angle), -self.arm_length * np.sin(angle), 0.0], # 1 rear-left
+                [-self.arm_length * np.cos(angle), self.arm_length * np.sin(angle), 0.0],  # 2 front-left
+                [self.arm_length * np.cos(angle), -self.arm_length * np.sin(angle), 0.0],  # 3 rear-right
+            ],
+            dtype=np.float32,
+        )
+        # Direction: +1 CW, -1 CCW (choose consistent pattern)
+        self.rotor_directions = np.array([1, 1, -1, -1], dtype=np.float32)
 
         # State
         self.position = np.zeros(3, dtype=np.float32)
         self.velocity = np.zeros(3, dtype=np.float32)
         self.acceleration = np.zeros(3, dtype=np.float32)
-        self.orientation = np.zeros(3, dtype=np.float32)  # Roll, Pitch, Yaw
-        self.angular_velocity = np.zeros(3, dtype=np.float32)
+
+        self.orientation_q = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)  # w,x,y,z
+        self.angular_velocity = np.zeros(3, dtype=np.float32)  # rad/s
         self.angular_acceleration = np.zeros(3, dtype=np.float32)
-        self.motor_thrusts = np.zeros(4, dtype=np.float32)  # Current motor thrust levels [0, 1]
 
-    def get_hover_thrust(self, gravity: float = 9.81) -> float:
-        """
-        Calculates the thrust value needed per motor to hover.
+        # Motor command (desired) and motor state (actual), both in [0,1]
+        self.motor_cmd = np.zeros(4, dtype=np.float32)
+        self.motor_thrusts = np.zeros(4, dtype=np.float32)  # "actual cmd" after lag, in [0,1]
 
-        Args:
-            gravity: Gravitational acceleration in m/s². Default is 9.81 m/s² (Earth).
+    def get_rotation_matrix(self) -> np.ndarray:
+        return quat_to_rotation_matrix(self.orientation_q)
 
-        Returns:
-            Thrust value [0, 1] needed per motor to counteract gravity.
-        """
-        # Total thrust needed to counteract gravity
-        total_thrust_needed = self.mass * gravity
-        # Each motor needs to provide 1/4 of the total
-        thrust_per_motor = total_thrust_needed / 4.0
-        # Convert to normalized thrust value [0, 1]
-        return thrust_per_motor / self.thrust_coef
+    def get_euler(self) -> np.ndarray:
+        return euler_from_quat(self.orientation_q)
 
-    def reset(self, initial_orientation: np.ndarray = None, gravity: float = 9.81):
-        """
-        Resets the drone to its initial state.
+    def get_normal(self) -> np.ndarray:
+        return self.get_rotation_matrix() @ np.array([0.0, 0.0, 1.0], dtype=np.float32)
 
-        Args:
-            initial_orientation: Optional initial orientation as [roll, pitch, yaw] in radians.
-                If None, a small random orientation is applied.
-            gravity: Gravitational acceleration in m/s². Used to initialize motor thrusts
-                to hover level. Default is 9.81 m/s².
-        """
-        self.position = np.zeros(3, dtype=np.float32)
-        self.velocity = np.zeros(3, dtype=np.float32)
-        self.acceleration = np.zeros(3, dtype=np.float32)
+    def get_hover_thrust_cmd(self, gravity: float = 9.81) -> float:
+        total = self.mass * gravity
+        per_motor = total / 4.0
+        # cmd^2 * maxT = per_motor => cmd = sqrt(per_motor/maxT)
+        return float(np.sqrt(np.clip(per_motor / self.max_thrust_per_motor, 0.0, 1.0)))
 
-        if initial_orientation is not None:
-            self.orientation = initial_orientation.astype(np.float32)
+    def reset(self, initial_orientation: np.ndarray | None = None, gravity: float = 9.81):
+        self.position[:] = 0
+        self.velocity[:] = 0
+        self.acceleration[:] = 0
+
+        if initial_orientation is None:
+            rpy = np.random.uniform(-0.05, 0.05, 3).astype(np.float32)
         else:
-            # Small random initial orientation
-            self.orientation = np.random.uniform(-0.1, 0.1, 3).astype(np.float32)
+            rpy = np.array(initial_orientation, dtype=np.float32)
 
-        self.angular_velocity = np.zeros(3, dtype=np.float32)
-        self.angular_acceleration = np.zeros(3, dtype=np.float32)
+        self.orientation_q = quat_from_euler(float(rpy[0]), float(rpy[1]), float(rpy[2]))
+        self.angular_velocity[:] = 0
+        self.angular_acceleration[:] = 0
 
-        # Initialize motor thrusts to hover level
-        hover_thrust = self.get_hover_thrust(gravity)
-        self.motor_thrusts = np.full(4, hover_thrust, dtype=np.float32)
+        hover_cmd = self.get_hover_thrust_cmd(gravity)
+        self.motor_cmd[:] = hover_cmd
+        self.motor_thrusts[:] = hover_cmd
 
     def update(
         self,
-        thrust_changes: np.ndarray,
+        motor_cmd: np.ndarray,
         dt: float,
-        wind_vector: np.ndarray = None,
+        wind_vector: np.ndarray | None = None,
         gravity: float = 9.81,
-        max_velocity: float = 40.0,
-        max_angular_velocity: float = 10.0,
+        max_velocity: float = 60.0,
+        max_angular_velocity: float = 25.0,
     ):
-        """
-        Updates the drone physics for one timestep.
-
-        Simulates the physical behavior of the drone based on motor thrust changes and
-        environmental factors using simplified Euler integration.
-
-        Args:
-            thrust_changes: Array of 4 normalized thrust change values in range [-1, 1],
-                one per motor. Positive values increase thrust, negative values decrease it.
-            dt: Timestep duration in seconds. Smaller values increase accuracy but require
-                more computation steps.
-            wind_vector: Optional wind velocity vector [wx, wy, wz] in m/s.
-                If None, no wind is applied. Wind affects drag forces.
-            gravity: Gravitational acceleration in m/s². Default is 9.81 m/s² (Earth).
-            max_velocity: Maximum linear velocity component in m/s. Velocity is clipped
-                to this value to prevent numerical instability. Default is 40.0 m/s.
-            max_angular_velocity: Maximum angular velocity component in rad/s. Angular
-                velocity is clipped to this value. Default is 10.0 rad/s.
-        """
+        dt = float(dt)
         if wind_vector is None:
             wind_vector = np.zeros(3, dtype=np.float32)
+        else:
+            wind_vector = wind_vector.astype(np.float32)
 
-        # Calculate motor acceleration based on dt and time_to_full_thrust
-        # We want to go from 0 to 1 in time_to_full_thrust seconds
-        # Number of steps = time_to_full_thrust / dt
-        # Per-step change for action=1.0: 1.0 / (time_to_full_thrust / dt) = dt / time_to_full_thrust
-        motor_acceleration = dt / self.time_to_full_thrust
+        # 1) Update commanded motor inputs (still normalized 0..1)
+        self.motor_cmd = np.clip(motor_cmd.astype(np.float32), 0.0, 1.0)
 
-        # Update motor thrusts based on actions
-        self.motor_thrusts += thrust_changes * motor_acceleration
+        # 2) Motor dynamics: first-order lag towards command
+        # x += (u - x) * (dt/tau)  (stable for small dt; clamp gain to avoid overshoot if dt>tau)
+        alpha = np.clip(dt / self.motor_tau, 0.0, 1.0)
+        self.motor_thrusts += (self.motor_cmd - self.motor_thrusts) * alpha
         self.motor_thrusts = np.clip(self.motor_thrusts, 0.0, 1.0)
 
-        # 1. Rotation from body-frame to world-frame
+        # 3) Compute per-motor thrust in Newtons (quadratic mapping)
+        thrusts_N = self.max_thrust_per_motor * (self.motor_thrusts ** 2)
+
+        # 4) Forces
         R = self.get_rotation_matrix()
+        # Total thrust in body frame (+Z body)
+        total_thrust_body = np.array([0.0, 0.0, float(np.sum(thrusts_N))], dtype=np.float32)
+        total_thrust_world = R @ total_thrust_body
 
-        # 2. Thrust direction in world-frame
-        thrust_direction_world = R @ np.array([0, 0, 1], dtype=np.float32)
+        gravity_force = np.array([0.0, 0.0, -self.mass * gravity], dtype=np.float32)
 
-        # 3. Project velocity onto thrust direction
-        velocity_in_thrust_direction = np.dot(self.velocity, thrust_direction_world)
-
-        # 4. Thrust modification based on velocity
-        # At negative velocity (falling): more thrust efficiency
-        # At positive velocity (climbing): less thrust efficiency
-        max_speed_in_thrust_dir = 30.0  # m/s
-        speed_factor = max(0.0, 1.0 - (velocity_in_thrust_direction / max_speed_in_thrust_dir))
-
-        # 5. Calculate thrust forces using current motor thrusts
-        thrusts = self.motor_thrusts * self.thrust_coef * speed_factor
-
-        # 6. Total force in body-frame
-        total_thrust_body = np.array([0, 0, np.sum(thrusts)], dtype=np.float32)
-
-        # 7. Rotate to world-frame
-        total_force_world = R @ total_thrust_body
-
-        # 8. Gravity
-        gravity_force = np.array([0, 0, -self.mass * gravity], dtype=np.float32)
-
-        # 9. Air drag (relative to wind)
-        relative_velocity = self.velocity - wind_vector
-        relative_speed = np.linalg.norm(relative_velocity)
-
-        if relative_speed > 0.01:
-            drag_force = -self.linear_drag_coef * relative_speed * relative_velocity
+        # Aerodynamic drag (quadratic)
+        v_rel = self.velocity - wind_vector
+        speed = float(np.linalg.norm(v_rel))
+        if speed > 1e-6:
+            drag_force = -0.5 * self.rho * self.CdA * speed * v_rel
         else:
             drag_force = np.zeros(3, dtype=np.float32)
 
-        # 10. Total force and linear acceleration
-        total_force = total_force_world + gravity_force + drag_force
+        total_force = total_thrust_world + gravity_force + drag_force
         self.acceleration = total_force / self.mass
 
-        # 11. Calculate torque
-        torque = self._compute_torque(thrusts)
+        # 5) Torques from thrusts
+        torque = self._compute_torque(thrusts_N)
 
-        # 12. Pendulum stabilization
-        roll, pitch, _ = self.orientation
-        pendulum_torque = self.pendulum_damping * np.array([
-            -self.mass * gravity * self.center_of_mass_offset * np.sin(roll),
-            -self.mass * gravity * self.center_of_mass_offset * np.sin(pitch),
-            0.0
-        ], dtype=np.float32)
+        # Optional pendulum-like restoring torque (off by default)
+        if self.enable_pendulum and self.pendulum_k != 0.0:
+            roll, pitch, _ = self.get_euler()
+            # very simple restoring torque model (still not "typical quad" physics)
+            pend = self.pendulum_k * np.array(
+                [
+                    -self.mass * gravity * self.center_of_mass_offset * np.sin(roll),
+                    -self.mass * gravity * self.center_of_mass_offset * np.sin(pitch),
+                    0.0,
+                ],
+                dtype=np.float32,
+            )
+            torque = torque + pend
 
-        # 13. Angular acceleration
-        self.angular_acceleration = (torque + pendulum_torque) / self.inertia
+        # Rotational damping torque
+        w = self.angular_velocity
+        w_norm = float(np.linalg.norm(w))
+        torque_drag = -self.k_w * w
+        if w_norm > 1e-6:
+            torque_drag += -self.k_w2 * w_norm * w
+        torque = torque + torque_drag
 
-        # 14. Integration (Euler method)
+        self.angular_acceleration = torque / self.inertia
+
+        # 6) Integrate linear (semi-implicit Euler)
         self.velocity += self.acceleration * dt
         self.velocity = np.clip(self.velocity, -max_velocity, max_velocity)
         self.position += self.velocity * dt
 
+        # 7) Integrate angular velocity
         self.angular_velocity += self.angular_acceleration * dt
-        self.angular_velocity *= (1 - self.angular_drag_coef)
-        self.angular_velocity = np.clip(
-            self.angular_velocity,
-            -max_angular_velocity,
-            max_angular_velocity
+        self.angular_velocity = np.clip(self.angular_velocity, -max_angular_velocity, max_angular_velocity)
+
+        # 8) Integrate quaternion orientation: q_dot = 0.5 * [0, ω] ⊗ q  (ω in body frame)
+        omega_q = np.array([0.0, self.angular_velocity[0], self.angular_velocity[1], self.angular_velocity[2]], dtype=np.float32)
+        q_dot = 0.5 * quat_mul(omega_q, self.orientation_q)
+        self.orientation_q = quat_normalize(self.orientation_q + q_dot * dt)
+
+    def _compute_torque(self, thrusts_N: np.ndarray) -> np.ndarray:
+        # Roll torque: right (0,3) - left (1,2)
+        roll_torque = (thrusts_N[0] + thrusts_N[3] - thrusts_N[1] - thrusts_N[2]) * (
+            self.arm_length / np.sqrt(2)
         )
-        self.orientation += self.angular_velocity * dt
 
-        # Normalize Euler angles to [-pi, pi]
-        self.orientation = (self.orientation + np.pi) % (2 * np.pi) - np.pi
+        # Pitch torque: front (0,2) - rear (1,3)
+        pitch_torque = (thrusts_N[0] + thrusts_N[2] - thrusts_N[1] - thrusts_N[3]) * (
+            self.arm_length / np.sqrt(2)
+        )
 
-    def _compute_torque(self, thrusts: np.ndarray) -> np.ndarray:
-        """
-        Calculates the torque based on rotor thrusts.
-
-        In X-configuration:
-        - Roll: Thrust difference between right and left motors
-        - Pitch: Thrust difference between front and rear motors
-        - Yaw: Difference in rotation directions (reactive torque)
-
-        Args:
-            thrusts: Array of 4 thrust values, one per motor.
-
-        Returns:
-            Torque vector [roll_torque, pitch_torque, yaw_torque] in N*m.
-        """
-        # Roll torque (around X-axis): Right (0, 3) vs. Left (1, 2)
-        roll_torque = (thrusts[0] + thrusts[3] - thrusts[1] - thrusts[2]) * \
-                      self.arm_length / np.sqrt(2)
-
-        # Pitch torque (around Y-axis): Front (0, 2) vs. Rear (1, 3)
-        pitch_torque = (thrusts[0] + thrusts[2] - thrusts[1] - thrusts[3]) * \
-                       self.arm_length / np.sqrt(2)
-
-        # Yaw torque (around Z-axis): Reactive torques
-        yaw_torque = np.sum(self.rotor_directions * thrusts) * self.torque_coef
+        # Yaw torque: reactive moment ~ direction * thrust (rough)
+        yaw_torque = float(np.sum(self.rotor_directions * thrusts_N) * self.yaw_moment_per_thrust)
 
         return np.array([roll_torque, pitch_torque, yaw_torque], dtype=np.float32)
 
-    def get_rotation_matrix(self) -> np.ndarray:
-        """
-        Computes the rotation matrix from body-frame to world-frame.
-
-        Uses Euler angles [roll, pitch, yaw] in ZYX convention (yaw-pitch-roll).
-
-        Returns:
-            3x3 rotation matrix that transforms vectors from body coordinates
-            to world coordinates.
-        """
-        roll, pitch, yaw = self.orientation
-
-        # Roll (rotation around X-axis)
-        Rx = np.array([
-            [1, 0, 0],
-            [0, np.cos(roll), -np.sin(roll)],
-            [0, np.sin(roll), np.cos(roll)]
-        ], dtype=np.float32)
-
-        # Pitch (rotation around Y-axis)
-        Ry = np.array([
-            [np.cos(pitch), 0, np.sin(pitch)],
-            [0, 1, 0],
-            [-np.sin(pitch), 0, np.cos(pitch)]
-        ], dtype=np.float32)
-
-        # Yaw (rotation around Z-axis)
-        Rz = np.array([
-            [np.cos(yaw), -np.sin(yaw), 0],
-            [np.sin(yaw), np.cos(yaw), 0],
-            [0, 0, 1]
-        ], dtype=np.float32)
-
-        # Combined rotation: R = Rz @ Ry @ Rx
-        return Rz @ Ry @ Rx
-
-    def get_normal(self):
-        return self.get_rotation_matrix() @ np.array([0, 0, 1])
-
     def get_state(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
-        Returns the current state of the drone.
-
         Returns:
-            Tuple of (position, velocity, orientation, angular_velocity, motor_thrusts).
-            All arrays are copied to prevent external modification.
+            (position, velocity, euler_rpy, angular_velocity, motor_thrusts)
+            - motor_thrusts here are normalized "actual cmd" in [0,1]
         """
         return (
             self.position.copy(),
             self.velocity.copy(),
-            self.orientation.copy(),
+            self.get_euler().copy(),
             self.angular_velocity.copy(),
-            self.motor_thrusts.copy()
+            self.motor_thrusts.copy(),
         )
 
     def set_state(
         self,
-        position: np.ndarray = None,
-        velocity: np.ndarray = None,
-        orientation: np.ndarray = None,
-        angular_velocity: np.ndarray = None,
-        motor_thrusts: np.ndarray = None
+        position: np.ndarray | None = None,
+        velocity: np.ndarray | None = None,
+        orientation_euler: np.ndarray | None = None,
+        angular_velocity: np.ndarray | None = None,
+        motor_cmd: np.ndarray | None = None,
+        motor_thrusts: np.ndarray | None = None,
     ):
-        """
-        Sets the state of the drone.
-
-        Args:
-            position: New position [x, y, z] in meters. If None, position is unchanged.
-            velocity: New velocity [vx, vy, vz] in m/s. If None, velocity is unchanged.
-            orientation: New orientation [roll, pitch, yaw] in radians.
-                If None, orientation is unchanged.
-            angular_velocity: New angular velocity [wx, wy, wz] in rad/s.
-                If None, angular velocity is unchanged.
-            motor_thrusts: New motor thrust values [0, 1] for 4 motors.
-                If None, motor thrusts are unchanged.
-        """
         if position is not None:
             self.position = position.astype(np.float32)
         if velocity is not None:
             self.velocity = velocity.astype(np.float32)
-        if orientation is not None:
-            self.orientation = orientation.astype(np.float32)
+        if orientation_euler is not None:
+            r, p, y = orientation_euler.astype(np.float32)
+            self.orientation_q = quat_from_euler(float(r), float(p), float(y))
         if angular_velocity is not None:
             self.angular_velocity = angular_velocity.astype(np.float32)
+        if motor_cmd is not None:
+            self.motor_cmd = np.clip(motor_cmd.astype(np.float32), 0.0, 1.0)
         if motor_thrusts is not None:
-            self.motor_thrusts = motor_thrusts.astype(np.float32)
+            self.motor_thrusts = np.clip(motor_thrusts.astype(np.float32), 0.0, 1.0)
 
-    def check_crash(
-        self,
-        z_velocity_threshold: float = -20.0,
-        tilt_threshold_rad: float = None
-    ) -> bool:
-        """
-        Checks if the drone has crashed.
-
-        A crash is detected if any of the following conditions are met:
-        - Vertical velocity exceeds the threshold (falling too fast)
-        - Roll or pitch angle exceeds the tilt threshold (unstable orientation)
-
-        Args:
-            z_velocity_threshold: Threshold for vertical velocity in m/s.
-                Negative values indicate downward motion. Default is -20.0 m/s.
-                If drone falls faster than this, a crash is detected.
-            tilt_threshold_rad: Threshold for roll/pitch angles in radians.
-                If None, tilt checking is disabled. If absolute value of roll
-                or pitch exceeds this threshold, a crash is detected.
-
-        Returns:
-            True if crash is detected, False otherwise.
-        """
-        # Falling too fast
+    def check_crash(self, z_velocity_threshold: float = -20.0, tilt_threshold_rad: float | None = None) -> bool:
         if self.velocity[2] < z_velocity_threshold:
             return True
-
-        # Extreme tilt
         if tilt_threshold_rad is not None:
-            roll, pitch, _ = self.orientation
+            roll, pitch, _ = self.get_euler()
             if abs(roll) > tilt_threshold_rad or abs(pitch) > tilt_threshold_rad:
                 return True
-
         return False
-

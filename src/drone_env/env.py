@@ -1,19 +1,22 @@
+import abc
+from typing import Optional, Tuple, Dict, Any
+
 import gymnasium as gym
 import numpy as np
-from gymnasium import spaces
-from typing import Optional, Tuple, Dict, Any
-from .renderer import DroneEnvRenderer
+from gymnasium import spaces, Space
+
 from .drone import Drone
+from .renderer import DroneEnvRenderer
 from .wind import Wind
 
 
-class DroneEnv(gym.Env):
+class DroneEnv(gym.Env[np.ndarray, np.ndarray]):
     """
     Gymnasium environment for quadcopter control with reinforcement learning.
 
     The drone (X-configuration) must fly to a target point and stay there.
 
-    - Action Space: 4 motors, each [-1, 1] for thrust changes (positive increases thrust)
+    - Action Space: 4 motors, each [0, 1] for target thrust
     - Observation Space: Relative position to target, velocity, acceleration (linear),
                          orientation (Euler angles), angular velocity, angular acceleration,
                          wind vector
@@ -97,12 +100,8 @@ class DroneEnv(gym.Env):
             mass=1.0,
             arm_length=0.10,
             inertia=np.array([0.01, 0.01, 0.02]),
-            thrust_coef=10.0,
-            torque_coef=0.1,
-            linear_drag_coef=0.01,
-            angular_drag_coef=0.05,
-            center_of_mass_offset=0.05,
-            pendulum_damping=0.9,
+            pendulum_k=0.1,
+            enable_pendulum=True
         )
 
         # Wind simulation
@@ -115,7 +114,7 @@ class DroneEnv(gym.Env):
 
         # Action Space: 4 motors, each [-1, 1] for thrust changes
         self.action_space = spaces.Box(
-            low=-1.0,
+            low=0.0,
             high=1.0,
             shape=(4,),
             dtype=np.float32
@@ -141,22 +140,24 @@ class DroneEnv(gym.Env):
             [-self.space_side_length / 2] * 3 +  # relative position
             [-self.max_velocity_component] * 3 +  # velocity
             [-self.max_acceleration] * 3 +  # linear acceleration
-            [-np.pi] * 3 +  # Euler angles
+            [-np.inf] * 4 +  # quaternions
             [-self.max_angular_velocity_component] * 3 +  # angular velocity
             [-self.max_angular_acceleration] * 3 +  # angular acceleration
             [-1.0] * 3 +  # normal vector (unit vector, each component in [-1, 1])
-            [-max_wind_velocity] * 3,  # wind
+            [-max_wind_velocity] * 3 +  # wind
+            [0] * 8, # target and current thrust
             dtype=np.float32
         )
         obs_high = np.array(
             [self.space_side_length / 2] * 3 + # relative position
             [self.max_velocity_component] * 3 +  # velocity
             [self.max_acceleration] * 3 +  # linear acceleration
-            [np.pi] * 3 +  # Euler angles
+            [np.inf] * 4 +  # quaternions
             [self.max_angular_velocity_component] * 3 +  # angular velocity
             [self.max_angular_acceleration] * 3 +  # angular acceleration
             [1.0] * 3 +  # normal vector (unit vector, each component in [-1, 1])
-            [max_wind_velocity] * 3, # wind
+            [max_wind_velocity] * 3 +  # wind
+            [1] * 8,  # target and current thrust
             dtype=np.float32
         )
         self.observation_space = spaces.Box(
@@ -229,7 +230,7 @@ class DroneEnv(gym.Env):
             - truncated: True if episode ended due to max_steps reached
             - info: Dictionary with additional information including 'crashed' flag
         """
-        action = np.clip(action, -1.0, 1.0)
+        action = np.clip(action, 0.0, 1.0)
 
         # Wind update
         self.wind.update(self.dt)
@@ -241,7 +242,7 @@ class DroneEnv(gym.Env):
 
         # Physics update via Drone class with simulation parameters
         self.drone.update(
-            thrust_changes=action,
+            motor_cmd=action,
             dt=self.dt,
             wind_vector=self.wind.get_vector(),
             gravity=self.gravity,
@@ -300,25 +301,28 @@ class DroneEnv(gym.Env):
         - [0:3]   Relative vector to target (target_pos - drone_pos)
         - [3:6]   Linear velocity of drone
         - [6:9]   Linear acceleration of drone (from previous timestep)
-        - [9:12]  Orientation (Euler angles: roll, pitch, yaw)
-        - [12:15] Angular velocity
-        - [15:18] Angular acceleration (from previous timestep)
-        - [18:21] Normal vector (drone facing direction, unit vector)
-        - [21:24] Wind vector (absolute wind velocity)
-
+        - [9:13]  Orientation (quaternions)
+        - [13:16] Angular velocity
+        - [16:19] Angular acceleration (from previous timestep)
+        - [19:22] Normal vector (drone facing direction, unit vector)
+        - [22:25] Wind vector (absolute wind velocity)
+        - [25:29] Motor thrusts (currently)
+        - [29:33] Motor thrusts (target)
         Returns:
-            Observation array with 24 elements.
+            Observation array with 33 elements.
         """
         vect_to_target = self.target_position - self.drone.position
         observation = np.concatenate([
             vect_to_target,                # [0:3]
             self.drone.velocity,           # [3:6]
             self.drone.acceleration,       # [6:9]
-            self.drone.orientation,        # [9:12]
-            self.drone.angular_velocity,   # [12:15]
-            self.drone.angular_acceleration, # [15:18]
-            self.drone.get_normal(),       # [18:21]
-            self.wind.get_vector(),        # [21:24]
+            self.drone.orientation_q,      # [9:13]
+            self.drone.angular_velocity,   # [13:16]
+            self.drone.angular_acceleration, # [16:19]
+            self.drone.get_normal(),       # [19:22]
+            self.wind.get_vector(),        # [22:25]
+            self.drone.motor_thrusts,      # [25:29]
+            self.drone.motor_cmd,          # [29:33]
         ]).astype(np.float32)
 
         return observation
@@ -406,7 +410,7 @@ class DroneEnv(gym.Env):
         return self.renderer.render(
             position=self.drone.position,
             velocity=self.drone.velocity,
-            orientation=self.drone.orientation,
+            orientation=self.drone.get_euler(),
             angular_velocity=self.drone.angular_velocity,
             target_position=self.target_position,
             wind_vector=self.wind.get_vector(),
@@ -422,3 +426,76 @@ class DroneEnv(gym.Env):
         """Closes the environment and cleans up resources."""
         self.renderer.close()
 
+class DroneEnvWrapper(abc.ABC, gym.Wrapper):
+    def __init__(self, drone_env: DroneEnv):
+        gym.Wrapper.__init__(self, drone_env)
+        self.action_space = self._get_action_space()
+
+    def __getattr__(self, name):
+        """Delegate attribute access to the wrapped environment."""
+        return getattr(self.env, name)
+
+    @abc.abstractmethod
+    def _get_action_space(self) -> Space:
+        pass
+
+    @abc.abstractmethod
+    def _transform_action(self, action: np.ndarray) -> np.ndarray:
+        pass
+
+    def step(self, action):
+        return self.env.step(self._transform_action(action))
+
+
+class MotionPrimitiveActionWrapper(DroneEnvWrapper):
+    """
+    This env wraps the DroneEnv class. Instead of interpreting actions as target motor thrusts, we interpret them as
+    targets for movement primitives:
+    - hover
+    - roll
+    - pitch
+    - yaw
+    """
+
+    def _get_action_space(self) -> Space:
+        return self.env.action_space
+
+    def _transform_action(self, action: np.ndarray):
+        """
+        Maps incoming hover, roll, pitch, yaw commands to single motor thrust commands.
+        :param action: an array containing actions for hovering, roll, pitch, and yaw
+        :return: an array containing individual motor commands
+        """
+        hover, roll, pitch, yaw = action
+        per_motor_command = np.array([
+            hover + roll + pitch + yaw,
+            hover - roll - pitch + yaw,
+            hover - roll + pitch - yaw,
+            hover + roll - pitch - yaw,
+        ])
+        return per_motor_command
+
+
+class ThrustChangeController(DroneEnvWrapper):
+    """
+    This env wraps the DroneEnv class. Instead of interpreting actions as target motor thrusts, we interpret them as
+    changes to the existing target motor thrusts:
+    """
+
+
+    def _transform_action(self, action: np.ndarray) -> np.ndarray:
+        """
+        Maps incoming changes to existing thrusts to absolute thrust commands.
+        :param action: an array containing thrust changes
+        :return: an array containing absolute thrusts
+        """
+        # can increase motor command from 0%-100% in 1 second
+        return self.env.dt * action + self.env.drone.motor_cmd
+
+    def _get_action_space(self) -> Space:
+        return spaces.Box(
+            low=-1.0,
+            high=1.0,
+            shape=(4,),
+            dtype=np.float32
+        )

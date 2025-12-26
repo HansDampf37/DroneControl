@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import argparse
 import numpy as np
 import os
-from src.drone_env import RLlibDroneEnv
+from src.drone_env import RLlibDroneEnv, ThrustChangeController
 from ray.rllib.algorithms.callbacks import DefaultCallbacks
 from ray.rllib.algorithms.ppo import PPOConfig
 from ray.rllib.algorithms.sac import SACConfig
@@ -33,11 +33,15 @@ logger = logging.getLogger(__name__)
 
 # Environment configuration
 env_config = {
-    "max_steps": 200, # 10 seconds
+    "max_steps": 2000, # 10 seconds
     "render_mode": None,
-    "enable_crash_detection": True,
-    "dt": 1.0/20, # 20 fps
-    "use_wind": True
+    "enable_crash_detection": False,
+    "enable_out_of_bounds_detection": True,
+    "dt": 1.0/50, # 20 fps
+    "use_wind": False,
+    "wrappers": [
+        ThrustChangeController,
+    ]
 }
 env_config_eval = env_config.copy()
 env_config_eval["render_mode"] = "human"
@@ -111,7 +115,7 @@ def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../mode
                 train_batch_size=2048,
                 minibatch_size=64,
                 num_epochs=10,
-                gamma=0.99,
+                gamma=0.96,
                 lambda_=0.95,
                 clip_param=0.2,
                 entropy_coeff=0.01,

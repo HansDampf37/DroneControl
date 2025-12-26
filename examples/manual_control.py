@@ -23,10 +23,13 @@ CW)        ○   CW)
 """
 import sys
 from pathlib import Path
+
+from src.drone_env.env import ThrustChangeController
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import numpy as np
-from src.drone_env import DroneEnv
+from src.drone_env import DroneEnv, MotionPrimitiveActionWrapper
 import matplotlib.pyplot as plt
 import time
 
@@ -38,16 +41,16 @@ class ManualDroneController:
         # dt=0.1 corresponds to 10 FPS (1/0.01 = 100 Hz)
         self.dt = 0.1  # Timestep in seconds
 
-        self.env = DroneEnv(
+        self.env = MotionPrimitiveActionWrapper(ThrustChangeController(DroneEnv(
             max_steps=10000,
             render_mode="human",
             enable_crash_detection=False,
             dt=self.dt,
-        )
+            use_wind=False,
+        )))
 
         # Motor states
-        self.motor_powers = np.array([0.0, 0.0, 0.0, 0.0])
-        self.motor_active = np.array([False, False, False, False])
+        self.motor_power_changes = np.array([0.0, 0.0, 0.0, 0.0])
 
         # Simulation state
         self.running = True
@@ -76,10 +79,8 @@ class ManualDroneController:
         print(f"  Target FPS: {self.target_fps:.0f}")
         print(f"  Frame time: {self.target_frame_time*1000:.1f}ms")
         print("\nCONTROLS:")
-        print("  1-4     : Set/toggle Motor 1-4 to 100%")
-        print("  Q/W/E/R : Set/toggle Motor 1-4 to 50%")
-        print("  0       : All motors OFF")
-        print("  SPACE   : All motors to 25% (hover)")
+        print("  1-4     : Actions 1-4 (100%)")
+        print("  5-8     : Actions 1-4 (0%)")
         print("  X or ESC : Exit")
         print("  R       : Reset (position & orientation)")
         print("\nMOTOR CONFIGURATION (X-formation):")
@@ -101,65 +102,28 @@ class ManualDroneController:
         key = event.key
 
         # Motors 1-4 to 100%
-        motor_power = 1
-        percent = f"{int(motor_power*100)}%"
         if key == '1':
-            self.motor_active[0] = not self.motor_active[0]
-            self.motor_powers[0] = motor_power if self.motor_active[0] else 0.0
-            print(f"Motor 0 (front-right): {'ON (' + percent + f')' if self.motor_active[0] else 'OFF'}")
-
-        elif key == '2':
-            self.motor_active[1] = not self.motor_active[1]
-            self.motor_powers[1] = motor_power if self.motor_active[1] else 0.0
-            print(f"Motor 1 (rear-left): {'ON (' + percent + f')' if self.motor_active[1] else 'OFF'}")
-
-        elif key == '3':
-            self.motor_active[2] = not self.motor_active[2]
-            self.motor_powers[2] = motor_power if self.motor_active[2] else 0.0
-            print(f"Motor 2 (front-left):  {'ON (' + percent + f')' if self.motor_active[2] else 'OFF'}")
-
-        elif key == '4':
-            self.motor_active[3] = not self.motor_active[3]
-            self.motor_powers[3] = motor_power if self.motor_active[3] else 0.0
-            print(f"Motor 3 (rear-right): {'ON (' + percent + f')' if self.motor_active[3] else 'OFF'}")
-
-        # Motors 1-4 to 50%
-        elif key == 'q':
-            self.motor_active[0] = not self.motor_active[0]
-            self.motor_powers[0] = 0.5 if self.motor_active[0] else 0.0
-            print(f"Motor 0 (front-right): {'ON (50%)' if self.motor_active[0] else 'OFF'}")
-
-        elif key == 'w':
-            self.motor_active[1] = not self.motor_active[1]
-            self.motor_powers[1] = 0.5 if self.motor_active[1] else 0.0
-            print(f"Motor 1 (rear-left): {'ON (50%)' if self.motor_active[1] else 'OFF'}")
-
-        elif key == 'e':
-            self.motor_active[2] = not self.motor_active[2]
-            self.motor_powers[2] = 0.5 if self.motor_active[2] else 0.0
-            print(f"Motor 2 (front-left):  {'ON (50%)' if self.motor_active[2] else 'OFF'}")
-
-        elif key == 'r':
-            # Special case: R can either set Motor 4 to 50% or reset
-            # Use Shift+R for reset
-            if event.key == 'R':  # Shift+R
-                self.reset()
-            else:  # Lowercase r
-                self.motor_active[3] = not self.motor_active[3]
-                self.motor_powers[3] = 0.5 if self.motor_active[3] else 0.0
-                print(f"Motor 3 (rear-right): {'ON (50%)' if self.motor_active[3] else 'OFF'}")
+            self.motor_power_changes[0] = 1
+        if key == '5':
+            self.motor_power_changes[0] = -1
+        if key == '2':
+            self.motor_power_changes[1] = 1
+        if key == '6':
+            self.motor_power_changes[1] = -1
+        if key == '3':
+            self.motor_power_changes[2] = 1
+        if key == '7':
+            self.motor_power_changes[2] = -1
+        if key == '4':
+            self.motor_power_changes[3] = 1
+        if key == '8':
+            self.motor_power_changes[3] = -1
 
         # All motors off
         elif key == '0':
-            self.motor_powers[:] = 0.0
-            self.motor_active[:] = False
+            self.motor_power_changes[:] = 0.0
             print("All motors OFF")
 
-        # Hover (all to 25%)
-        elif key == ' ':
-            self.motor_powers[:] = 0.25
-            self.motor_active[:] = True
-            print("All motors to 25% (hover attempt)")
 
         # Reset
         elif key == 'R':  # Shift+R
@@ -174,8 +138,7 @@ class ManualDroneController:
     def reset(self):
         """Reset the drone to initial state."""
         self.obs, self.info = self.env.reset()
-        self.motor_powers[:] = 0.0
-        self.motor_active[:] = False
+        self.motor_power_changes[:] = 0.0
         self.episode_count += 1
         print(f"\n>>> RESET: Starting Episode {self.episode_count} <<<\n")
 
@@ -201,7 +164,7 @@ class ManualDroneController:
                 frame_start_time = time.time()
 
                 # Step simulation with current motor powers
-                self.obs, reward, terminated, truncated, self.info = self.env.step(self.motor_powers)
+                self.obs, reward, terminated, truncated, self.info = self.env.step(self.motor_power_changes)
 
                 # Check if episode ended (failed)
                 if terminated or truncated:
@@ -248,9 +211,9 @@ class ManualDroneController:
                 # Display info every 2 seconds
                 if current_time - last_info_time > 2.0:
                     pos = self.info['position']
-                    roll_deg = np.rad2deg(self.env.drone.orientation[0])
-                    pitch_deg = np.rad2deg(self.env.drone.orientation[1])
-                    yaw_deg = np.rad2deg(self.env.drone.orientation[2])
+                    roll_deg = np.rad2deg(self.env.drone.get_euler()[0])
+                    pitch_deg = np.rad2deg(self.env.drone.get_euler()[1])
+                    yaw_deg = np.rad2deg(self.env.drone.get_euler()[2])
                     angular_vel = np.rad2deg(self.env.drone.angular_velocity)
                     vel = self.env.drone.velocity
 
@@ -263,8 +226,6 @@ class ManualDroneController:
                     print(f"  Yaw:   {yaw_deg:6.1f}°")
                     print(f"  Velocity: [{vel[0]:6.2f}, {vel[1]:6.2f}, {vel[2]:6.2f}]m/s")
                     print(f"  Angular Velocity: [{angular_vel[0]:6.2f}, {angular_vel[1]:6.2f}, {angular_vel[2]:6.2f}]deg/s")
-                    print(f"  Motors: [{self.motor_powers[0]:.2f}, {self.motor_powers[1]:.2f}, "
-                          f"{self.motor_powers[2]:.2f}, {self.motor_powers[3]:.2f}]")
                     print(f"  FPS: {self.actual_fps:.1f} / {self.target_fps:.0f} (target)")
 
                     last_info_time = current_time

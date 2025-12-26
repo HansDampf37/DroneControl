@@ -1,10 +1,12 @@
 """Drone RL Environment Package."""
-from .env import DroneEnv
-from .renderer import DroneEnvRenderer
+import gymnasium
+
 from .drone import Drone
+from .env import DroneEnv, MotionPrimitiveActionWrapper, ThrustChangeController
+from .renderer import DroneEnvRenderer
 
 
-class RLlibDroneEnv(DroneEnv):
+class RLlibDroneEnv(gymnasium.Wrapper):
     """
     RLlib-compatible wrapper for DroneEnv.
 
@@ -37,16 +39,21 @@ class RLlibDroneEnv(DroneEnv):
 
         # Call parent constructor with named parameters
         super().__init__(
-            max_steps=max_steps,
-            dt=dt,
-            target_change_interval=target_change_interval,
-            wind_strength_range=wind_strength_range,
-            use_wind=use_wind,
-            render_mode=render_mode,
-            enable_crash_detection=enable_crash_detection,
-            crash_z_vel_threshold=crash_z_vel_threshold,
-            crash_tilt_threshold=crash_tilt_threshold,
+            DroneEnv(
+                max_steps=max_steps,
+                dt=dt,
+                target_change_interval=target_change_interval,
+                wind_strength_range=wind_strength_range,
+                use_wind=use_wind,
+                render_mode=render_mode,
+                enable_crash_detection=enable_crash_detection,
+                crash_z_vel_threshold=crash_z_vel_threshold,
+                crash_tilt_threshold=crash_tilt_threshold,
+            )
         )
+        wrappers = config.get("wrappers", [])
+        for wrapper_class in wrappers:
+            self.env = wrapper_class(self.env)
 
 
 __all__ = ['DroneEnv', 'RLlibDroneEnv', 'DroneEnvRenderer', 'Drone']
