@@ -341,8 +341,12 @@ class DroneEnv(gym.Env[np.ndarray, np.ndarray]):
             Reward value in range [0.0, 1.0].
         """
         distance = np.linalg.norm(self.target_position - self.drone.position)
-        angular_vel_magnitude = np.linalg.norm(self.drone.angular_velocity)
-        return 0.5 * (np.exp(-distance) + 1 / (angular_vel_magnitude ** 2 + 1))
+        direction_target = (self.target_position - self.drone.position) / (distance + 1e-6)
+        correct_vel = np.dot(self.drone.velocity, direction_target)
+        reward_position = np.exp(-1.0 * distance)
+        reward_vel = np.tanh(correct_vel / 0.3)
+        reward = reward_position + 0.5 * (1.0 - reward_position) * reward_vel
+        return reward
 
     def _check_crash(self) -> bool:
         """

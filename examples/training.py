@@ -33,12 +33,12 @@ logger = logging.getLogger(__name__)
 
 # Environment configuration
 env_config = {
-    "max_steps": 2000, # 10 seconds
+    "max_steps": 100, # 5 seconds
     "render_mode": None,
     "enable_crash_detection": False,
     "enable_out_of_bounds_detection": True,
-    "dt": 1.0/50, # 20 fps
-    "use_wind": False,
+    "dt": 1.0/20, # 20 fps
+    "use_wind": True,
     "wrappers": [
         ThrustChangeController,
     ]
