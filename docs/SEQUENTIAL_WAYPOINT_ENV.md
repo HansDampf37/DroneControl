@@ -133,7 +133,7 @@ from src.drone_env.env import SequentialWaypointEnv
 
 env = SequentialWaypointEnv(
     num_waypoints=5,
-    waypoint_reach_threshold=0.4,
+    waypoint_reach_threshold_m=0.4,
     max_steps=3000,
 )
 
@@ -142,10 +142,6 @@ obs, info = env.reset()
 for step in range(3000):
     action = policy(obs)  # Your policy here
     obs, reward, terminated, truncated, info = env.step(action)
-    
-    if info['waypoint_reached']:
-        print(f"Waypoint {info['waypoints_reached']} reached!")
-    
     if terminated or truncated:
         break
 

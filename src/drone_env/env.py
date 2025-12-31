@@ -167,6 +167,7 @@ class DroneEnv(gym.Env[np.ndarray, np.ndarray]):
         )
 
         self.max_dist_to_target = np.sqrt(3 * self.space_side_length ** 2)
+        self.vel_scale = 3
 
         # Environment state
         self.target_position = np.zeros(3, dtype=np.float32)
@@ -343,7 +344,7 @@ class DroneEnv(gym.Env[np.ndarray, np.ndarray]):
         direction_target = (self.target_position - self.drone.position) / (distance + 1e-6)
         correct_vel = np.dot(self.drone.velocity, direction_target)
         reward_position = np.exp(-1.0 * distance)
-        reward_vel = np.tanh(correct_vel / 0.3)
+        reward_vel = np.tanh(correct_vel / self.vel_scale)
         reward = reward_position + 0.5 * (1.0 - reward_position) * reward_vel
         return reward
 
@@ -444,31 +445,28 @@ class SequentialWaypointEnv(DroneEnv):
 
     def __init__(
             self,
-            waypoint_reach_threshold: float = 0.4,
-            waypoint_spacing_range: Tuple[float, float] = (2.0, 4.0),
+            max_num_waypoints: int = 15,
+            waypoint_reach_threshold_m: float = 0.4,
             checkpoint_bonus: float = 10.0,
             bonus_decay_rate_per_sec: float = 2.0,
-            speed_reward_weight: float = 1.0,
             **kwargs
     ):
         """
         Initializes the sequential waypoint environment.
 
         Args:
-            waypoint_reach_threshold: Distance threshold to consider waypoint reached (meters).
-            waypoint_spacing_range: Tuple of (min, max) distance between waypoints (meters).
+            max_num_waypoints: The maximum number of waypoints to reach.
+            waypoint_reach_threshold_m: Distance threshold to consider waypoint reached (meters).
             checkpoint_bonus: Initial bonus reward for reaching each waypoint.
             bonus_decay_rate_per_sec: Rate at which checkpoint bonus decays per second after last checkpoint.
-            speed_reward_weight: Weight for speed-based reward component.
             **kwargs: Additional arguments passed to DroneEnv parent class.
         """
         super().__init__(**kwargs)
 
-        self.waypoint_reach_threshold = waypoint_reach_threshold
-        self.waypoint_spacing_range = waypoint_spacing_range
+        self.waypoint_reach_threshold_m = waypoint_reach_threshold_m
         self.checkpoint_bonus = checkpoint_bonus
         self.bonus_decay_rate_per_sec = bonus_decay_rate_per_sec
-        self.speed_reward_weight = speed_reward_weight
+        self.max_num_waypoints = max_num_waypoints
 
         # Waypoint tracking
         self.next_waypoint = np.zeros(3, dtype=np.float32)
@@ -512,9 +510,7 @@ class SequentialWaypointEnv(DroneEnv):
 
         # Check waypoint reached
         distance_to_waypoint = np.linalg.norm(self.target_position - self.drone.position)
-        waypoint_reached = distance_to_waypoint <= self.waypoint_reach_threshold
-
-        if waypoint_reached:
+        if distance_to_waypoint <= self.waypoint_reach_threshold_m:
             self.waypoints_reached += 1
             self.time_since_last_checkpoint = 0
 
@@ -524,14 +520,12 @@ class SequentialWaypointEnv(DroneEnv):
         else:
             self.time_since_last_checkpoint += self.dt
 
-        # Update observation and reward
+        # get observation reward and info
         observation = self._get_observation()
         reward = self._compute_reward()
-
-        # Update info
         info = self._get_info()
-        info['waypoint_reached'] = waypoint_reached
-        info['waypoints_reached'] = self.waypoints_reached
+
+        truncated = truncated or self.max_num_waypoints == self.waypoints_reached
 
         return observation, reward, terminated, truncated, info
 
@@ -549,15 +543,13 @@ class SequentialWaypointEnv(DroneEnv):
         2. Decaying checkpoint bonus for reaching waypoints
         """
         distance = np.linalg.norm(self.target_position - self.drone.position)
-        if distance < self.waypoint_reach_threshold:
-            reward = max(self.checkpoint_bonus - self.bonus_decay_rate_per_sec * self.time_since_last_checkpoint, 2.0)
+        if distance < self.waypoint_reach_threshold_m:
+            reward = max(self.checkpoint_bonus - self.bonus_decay_rate_per_sec * self.time_since_last_checkpoint, 0.0)
         else:
-            reward = 0.0
+            direction_target = (self.target_position - self.drone.position) / (distance + 1e-6)
+            correct_vel = np.dot(self.drone.velocity, direction_target)
+            reward = np.tanh(correct_vel / self.vel_scale)
 
-        direction_target = (self.target_position - self.drone.position) / (distance + 1e-6)
-        correct_vel = np.dot(self.drone.velocity, direction_target)
-        reward_vel = np.tanh(correct_vel / 0.3)
-        reward += (1 - np.exp(-distance)) * reward_vel
         return reward
 
     def _get_info(self) -> Dict[str, Any]:
@@ -566,8 +558,8 @@ class SequentialWaypointEnv(DroneEnv):
 
         info.update({
             'waypoints_reached': self.waypoints_reached,
-            'current_waypoint': self.target_position.copy(),
-            'next_waypoint': self.next_waypoint.copy(),
+            'current_waypoint_pos': self.target_position.copy(),
+            'next_waypoint_pos': self.next_waypoint.copy(),
             'steps_since_checkpoint': self.time_since_last_checkpoint,
         })
         return info
