@@ -284,6 +284,35 @@ class PyGameRenderer:
             self._draw_line_3d(tip, base3, color, width)
             self._draw_line_3d(tip, base4, color, width)
 
+    def _draw_drop_line(self, position: np.ndarray, color: Tuple[int, int, int],
+                        width: int = 1, dashed: bool = True):
+        """
+        Draw a vertical line from a position down to the XY-plane (z=0).
+
+        Args:
+            position: 3D position [x, y, z]
+            color: Line color
+            width: Line width
+            dashed: If True, draw a dashed line
+        """
+        # Start point (object position)
+        start = position.copy()
+        # End point (projection on XY-plane)
+        end = position.copy()
+        end[2] = 0.0  # Set z to 0 (ground plane)
+
+        if dashed:
+            # Draw dashed line
+            num_segments = 10
+            for i in range(num_segments):
+                if i % 2 == 0:  # Draw every other segment
+                    segment_start = start + (end - start) * (i / num_segments)
+                    segment_end = start + (end - start) * ((i + 1) / num_segments)
+                    self._draw_line_3d(segment_start, segment_end, color, width)
+        else:
+            # Draw solid line
+            self._draw_line_3d(start, end, color, width)
+
     def _draw_grid(self):
         """Draw a reference grid on the ground plane."""
         grid_size = int(self.space_side_length) + 2
@@ -601,6 +630,10 @@ class PyGameRenderer:
 
         # Draw grid
         self._draw_grid()
+
+        # Draw drop lines to ground plane
+        self._draw_drop_line(position, (100, 150, 200), width=2, dashed=True)  # Drone drop line (blue-ish)
+        self._draw_drop_line(target_position, (100, 200, 100), width=2, dashed=True)  # Target drop line (green-ish)
 
         # Draw connection line from drone to target
         self._draw_line_3d(position, target_position, (150, 150, 150), 1)
