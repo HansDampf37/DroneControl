@@ -188,8 +188,11 @@ class Drone:
         # cmd^2 * maxT = per_motor => cmd = sqrt(per_motor/maxT)
         return float(np.sqrt(np.clip(per_motor / self.max_thrust_per_motor, 0.0, 1.0)))
 
-    def reset(self, initial_orientation: np.ndarray | None = None, gravity: float = 9.81):
-        self.position[:] = 0
+    def reset(self, initial_orientation: np.ndarray | None = None, gravity: float = 9.81, initial_position: np.ndarray | None = None):
+        if initial_position is None:
+            self.position[:] = 0
+        else:
+            self.position[:] = initial_position
         self.velocity[:] = 0
         self.acceleration[:] = 0
 
@@ -346,9 +349,14 @@ class Drone:
         if motor_thrusts is not None:
             self.motor_thrusts = np.clip(motor_thrusts.astype(np.float32), 0.0, 1.0)
 
-    def check_crash(self, z_velocity_threshold: float = -20.0, tilt_threshold_rad: float | None = None) -> bool:
+    def check_crash(self, z_velocity_threshold: float = -20.0, tilt_threshold_rad: float | None = None, ground_level: float = 0.0) -> bool:
+        # Check if drone hit the ground
+        if self.position[2] <= ground_level:
+            return True
+        # Check if drone is falling too fast
         if self.velocity[2] < z_velocity_threshold:
             return True
+        # Check if drone is tilted too much
         if tilt_threshold_rad is not None:
             roll, pitch, _ = self.get_euler()
             if abs(roll) > tilt_threshold_rad or abs(pitch) > tilt_threshold_rad:

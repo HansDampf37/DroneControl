@@ -142,7 +142,7 @@ class DroneEnv(gym.Env[np.ndarray, np.ndarray]):
         # [18:21] - Normal vector (drone facing direction, unit vector)
         # [21:24] - Wind vector absolute (wx, wy, wz)
         obs_low = np.array(
-            [-self.space_side_length / 2] * 3 +  # relative position
+            [-self.space_side_length / 2, -self.space_side_length / 2, -self.space_side_length / 2] +  # relative position (x, y centered; z relative)
             [-self.max_velocity_component] * 3 +  # velocity
             [-self.max_acceleration] * 3 +  # linear acceleration
             [-np.inf] * 4 +  # quaternions
@@ -154,7 +154,7 @@ class DroneEnv(gym.Env[np.ndarray, np.ndarray]):
             dtype=np.float32
         )
         obs_high = np.array(
-            [self.space_side_length / 2] * 3 +  # relative position
+            [self.space_side_length / 2, self.space_side_length / 2, self.space_side_length / 2] +  # relative position (x, y centered; z relative)
             [self.max_velocity_component] * 3 +  # velocity
             [self.max_acceleration] * 3 +  # linear acceleration
             [np.inf] * 4 +  # quaternions
@@ -207,9 +207,10 @@ class DroneEnv(gym.Env[np.ndarray, np.ndarray]):
         """
         super().reset(seed=seed)
 
-        # Reset drone
+        # Reset drone - start at center of elevated space
         initial_orientation = np.random.uniform(-0.1, 0.1, 3).astype(np.float32)
-        self.drone.reset(initial_orientation=initial_orientation, gravity=self.gravity)
+        initial_position = np.array([0.0, 0.0, self.space_side_length / 2], dtype=np.float32)
+        self.drone.reset(initial_orientation=initial_orientation, gravity=self.gravity, initial_position=initial_position)
 
         # Random target point
         self.target_position = self._generate_random_target()
@@ -292,15 +293,18 @@ class DroneEnv(gym.Env[np.ndarray, np.ndarray]):
         # Ensure target is not at origin to avoid zero initial distance
         min_distance = 1.0  # Minimum 1 meter from origin
 
+        # Center of the space (where drone starts)
+        space_center = np.array([0, 0, self.space_side_length / 2], dtype=np.float32)
+
         while True:
             x = np.random.uniform(-self.space_side_length / 2, self.space_side_length / 2)
             y = np.random.uniform(-self.space_side_length / 2, self.space_side_length / 2)
-            z = np.random.uniform(-self.space_side_length / 2, self.space_side_length / 2)
+            z = np.random.uniform(0, self.space_side_length)  # z from 0 (ground) to space_side_length (top)
 
             target = np.array([x, y, z], dtype=np.float32)
 
-            # Check if target is far enough from origin (drone starting position)
-            if np.linalg.norm(target) >= min_distance:
+            # Check if target is far enough from space center (drone starting position)
+            if np.linalg.norm(target - space_center) >= min_distance:
                 return target
 
     def _get_observation(self) -> np.ndarray:
