@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import argparse
 import numpy as np
 import os
-from src.drone_env import RLlibDroneEnv, ThrustChangeController
+from src.drone_env import RLlibDroneEnv, ThrustChangeController, SequentialWaypointEnv
 from ray.rllib.algorithms.callbacks import DefaultCallbacks
 from ray.rllib.algorithms.ppo import PPOConfig
 from ray.rllib.algorithms.sac import SACConfig
@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 # Environment configuration
 env_config = {
+    "env_class": SequentialWaypointEnv,
     "max_steps": 600, # 30 seconds
     "render_mode": None,
     "enable_crash_detection": False,
