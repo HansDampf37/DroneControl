@@ -144,43 +144,31 @@ class DroneEnvRenderer:
         self.ax_metrics.set_ylim(0, 1)
         self.ax_metrics.axis('off')  # Hide axes for the metrics panel
 
-    def render(
-        self,
-        position: np.ndarray,
-        velocity: np.ndarray,
-        orientation: np.ndarray,
-        angular_velocity: np.ndarray,
-        target_position: np.ndarray,
-        wind_vector: np.ndarray,
-        rotation_matrix: np.ndarray,
-        rotor_positions: np.ndarray,
-        step_count: int,
-        reward: float,
-        motor_thrusts: np.ndarray = None,
-        dt: float = 0.01
-    ):
+    def render(self, env, **kwargs):
         """
         Renders the current scene.
 
         Args:
-            position: Drone position [x, y, z] in meters.
-            velocity: Drone velocity [vx, vy, vz] in m/s.
-            orientation: Drone orientation [roll, pitch, yaw] in radians.
-            angular_velocity: Angular velocity [wx, wy, wz] in rad/s.
-            target_position: Target position [x, y, z] in meters.
-            wind_vector: Wind velocity [wx, wy, wz] in m/s.
-            rotation_matrix: 3x3 rotation matrix from body-frame to world-frame.
-            rotor_positions: Nx3 array of rotor positions in body-frame.
-            step_count: Current step number in the episode.
-            reward: Current reward value.
-            motor_thrusts: Array of 4 motor thrust values in range [0, 1]. Default is None.
-            dt: Timestep duration in seconds for episode time calculation. Default is 0.01.
+            env: DroneEnv instance containing all the state information needed for rendering.
+            kwargs: Dictionary to log in info box
 
         Returns:
             RGB array if render_mode is "rgb_array", None otherwise.
         """
         if self.render_mode is None:
             return None
+
+        # Extract state from environment
+        position = env.drone.position
+        velocity = env.drone.velocity
+        orientation = env.drone.get_euler()
+        target_position = env.target_position
+        wind_vector = env.wind.get_vector()
+        rotation_matrix = env.drone.get_rotation_matrix()
+        rotor_positions = env.drone.rotor_positions
+        step_count = env.step_count
+        motor_thrusts = env.drone.motor_thrusts
+        dt = env.dt
 
         # Store motor thrusts and calculate episode time
         if motor_thrusts is not None:
@@ -210,7 +198,7 @@ class DroneEnvRenderer:
         # ========== DRAW INFO BOX ==========
         self._render_info(
             position, velocity, orientation, target_position,
-            wind_vector, step_count, reward, episode_time
+            wind_vector, step_count, episode_time, **kwargs
         )
 
         # ========== DRAW MOTOR POWER BARS ==========
@@ -748,8 +736,8 @@ class DroneEnvRenderer:
         target_position: np.ndarray,
         wind_vector: np.ndarray,
         step_count: int,
-        reward: float,
         episode_time: float,
+        **kwargs
     ):
         """Renders the info box with status data in the metrics panel."""
         distance = np.linalg.norm(target_position - position)
@@ -770,7 +758,8 @@ class DroneEnvRenderer:
         info_text += f'Roll: {roll_deg:.1f}°\n'
         info_text += f'Pitch: {pitch_deg:.1f}°\n'
         info_text += f'Yaw: {yaw_deg:.1f}°\n'
-        info_text += f'Reward: {reward:.4f}'
+        for key, value in kwargs.items():
+            info_text += f'{key}: {value}\n'
 
         first_render = self._render_objects['info_text'] is None
 

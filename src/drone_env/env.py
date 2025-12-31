@@ -407,24 +407,8 @@ class DroneEnv(gym.Env[np.ndarray, np.ndarray]):
         if self.render_mode is None:
             return None
 
-        # Get rotation matrix from drone
-        R = self.drone.get_rotation_matrix()
-
         # Delegate to renderer
-        return self.renderer.render(
-            position=self.drone.position,
-            velocity=self.drone.velocity,
-            orientation=self.drone.get_euler(),
-            angular_velocity=self.drone.angular_velocity,
-            target_position=self.target_position,
-            wind_vector=self.wind.get_vector(),
-            rotation_matrix=R,
-            rotor_positions=self.drone.rotor_positions,
-            step_count=self.step_count,
-            reward=self._compute_reward(),
-            motor_thrusts=self.drone.motor_thrusts,
-            dt=self.dt
-        )
+        return self.renderer.render(self, Reward=f"{self._compute_reward():.2f}")
 
     def close(self):
         """Closes the environment and cleans up resources."""
