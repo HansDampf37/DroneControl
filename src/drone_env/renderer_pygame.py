@@ -42,6 +42,15 @@ class PyGameRenderer:
         self.camera_distance = space_side_length * 2.5
         self.camera_angle_h = 45  # Horizontal angle (degrees)
         self.camera_angle_v = 30  # Vertical angle (degrees)
+        self.camera_position = np.array([0.0, 0.0, 0.0], dtype=np.float32)  # Camera offset
+
+        # Mouse control state
+        self.mouse_dragging = False
+        self.last_mouse_pos = None
+        self.mouse_sensitivity = 0.2  # degrees per pixel
+
+        # Keyboard control state
+        self.camera_speed = 0.1  # meters per frame
 
         # Colors
         self.BG_COLOR = (240, 240, 245)
@@ -90,7 +99,8 @@ class PyGameRenderer:
         Returns:
             Tuple of (screen_x, screen_y) coordinates
         """
-        x, y, z = point_3d
+        # Apply camera offset
+        x, y, z = point_3d - self.camera_position
 
         # Apply camera rotation
         angle_h_rad = np.deg2rad(self.camera_angle_h)
@@ -123,7 +133,7 @@ class PyGameRenderer:
         Returns:
             Depth value (higher = further away)
         """
-        x, y, z = point_3d
+        x, y, z = point_3d - self.camera_position
         angle_h_rad = np.deg2rad(self.camera_angle_h)
         angle_v_rad = np.deg2rad(self.camera_angle_v)
 
@@ -135,6 +145,76 @@ class PyGameRenderer:
         y_final = y_rot * np.cos(angle_v_rad) - z * np.sin(angle_v_rad)
 
         return y_final
+
+    def _handle_keyboard_input(self):
+        """Handle keyboard input for camera movement."""
+        keys = pygame.key.get_pressed()
+
+        # Calculate camera forward/right vectors based on horizontal angle
+        angle_h_rad = np.deg2rad(self.camera_angle_h)
+
+        # Forward direction (in XY plane)
+        forward = np.array([
+            np.sin(angle_h_rad),
+            np.cos(angle_h_rad),
+            0
+        ])
+
+        # Right direction (perpendicular to forward in XY plane)
+        right = np.array([
+            np.cos(angle_h_rad),
+            -np.sin(angle_h_rad),
+            0
+        ])
+
+        # Up direction
+        up = np.array([0, 0, 1])
+
+        # WASD for horizontal movement
+        if keys[pygame.K_w]:
+            self.camera_position += forward * self.camera_speed
+        if keys[pygame.K_s]:
+            self.camera_position -= forward * self.camera_speed
+        if keys[pygame.K_a]:
+            self.camera_position -= right * self.camera_speed
+        if keys[pygame.K_d]:
+            self.camera_position += right * self.camera_speed
+
+        # Space/Shift for vertical movement
+        if keys[pygame.K_SPACE]:
+            self.camera_position += up * self.camera_speed
+        if keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]:
+            self.camera_position -= up * self.camera_speed
+
+    def _handle_mouse_input(self, event):
+        """Handle mouse input for camera rotation."""
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:  # Left mouse button
+                self.mouse_dragging = True
+                self.last_mouse_pos = pygame.mouse.get_pos()
+
+        elif event.type == pygame.MOUSEBUTTONUP:
+            if event.button == 1:
+                self.mouse_dragging = False
+                self.last_mouse_pos = None
+
+        elif event.type == pygame.MOUSEMOTION:
+            if self.mouse_dragging and self.last_mouse_pos is not None:
+                current_pos = pygame.mouse.get_pos()
+                dx = current_pos[0] - self.last_mouse_pos[0]
+                dy = current_pos[1] - self.last_mouse_pos[1]
+
+                # Update camera angles
+                self.camera_angle_h += dx * self.mouse_sensitivity
+                self.camera_angle_v -= dy * self.mouse_sensitivity
+
+                # Clamp vertical angle to avoid flipping
+                self.camera_angle_v = np.clip(self.camera_angle_v, -89, 89)
+
+                # Wrap horizontal angle
+                self.camera_angle_h = self.camera_angle_h % 360
+
+                self.last_mouse_pos = current_pos
 
     def _draw_sphere(self, position: np.ndarray, radius: float, color: Tuple[int, int, int]):
         """Draw a 3D sphere at the given position."""
@@ -378,6 +458,100 @@ class PyGameRenderer:
             pct_rect = pct_text.get_rect(center=(bar_x + i * bar_spacing + bar_width // 2, bar_y - 10))
             self.screen.blit(pct_text, pct_rect)
 
+    def _draw_coordinate_system(self):
+        """Draw a 3D coordinate system indicator in the bottom-left corner."""
+        # Position in bottom-left corner
+        origin_x = 80
+        origin_y = self.screen_height - 80
+        axis_length = 50
+
+        # Define axis vectors in world space
+        x_axis = np.array([1, 0, 0])
+        y_axis = np.array([0, 1, 0])
+        z_axis = np.array([0, 0, 1])
+
+        # Apply camera rotation to axes
+        angle_h_rad = np.deg2rad(self.camera_angle_h)
+        angle_v_rad = np.deg2rad(self.camera_angle_v)
+
+        def rotate_axis(axis):
+            # Rotate around Z axis
+            x_rot = axis[0] * np.cos(angle_h_rad) - axis[1] * np.sin(angle_h_rad)
+            y_rot = axis[0] * np.sin(angle_h_rad) + axis[1] * np.cos(angle_h_rad)
+            z_rot = axis[2]
+
+            # Rotate around X axis
+            y_final = y_rot * np.cos(angle_v_rad) - z_rot * np.sin(angle_v_rad)
+            z_final = y_rot * np.sin(angle_v_rad) + z_rot * np.cos(angle_v_rad)
+
+            return np.array([x_rot, y_final, z_final])
+
+        # Rotate axes
+        x_rotated = rotate_axis(x_axis)
+        y_rotated = rotate_axis(y_axis)
+        z_rotated = rotate_axis(z_axis)
+
+        # Project to 2D (simple orthographic for the indicator)
+        def project_axis(axis_3d):
+            return (
+                int(origin_x + axis_3d[0] * axis_length),
+                int(origin_y - axis_3d[2] * axis_length - axis_3d[1] * axis_length * 0.5)
+            )
+
+        x_2d = project_axis(x_rotated)
+        y_2d = project_axis(y_rotated)
+        z_2d = project_axis(z_rotated)
+
+        # Draw background circle
+        pygame.draw.circle(self.screen, (255, 255, 255), (origin_x, origin_y), 65, 0)
+        pygame.draw.circle(self.screen, (0, 0, 0), (origin_x, origin_y), 65, 2)
+
+        # Draw axes with labels (draw in order of depth for proper occlusion)
+        axes_data = [
+            (x_rotated, x_2d, (255, 0, 0), 'X'),    # Red
+            (y_rotated, y_2d, (0, 255, 0), 'Y'),    # Green
+            (z_rotated, z_2d, (0, 100, 255), 'Z')   # Blue
+        ]
+
+        # Sort by depth (y component after rotation, negative = further)
+        axes_data.sort(key=lambda a: a[0][1])
+
+        # Draw axes
+        for axis_3d, axis_2d, color, label in axes_data:
+            # Draw axis line
+            pygame.draw.line(self.screen, color, (origin_x, origin_y), axis_2d, 3)
+
+            # Draw arrowhead
+            direction = np.array([axis_2d[0] - origin_x, axis_2d[1] - origin_y])
+            length = np.linalg.norm(direction)
+            if length > 0:
+                direction = direction / length
+                perp = np.array([-direction[1], direction[0]])
+
+                arrow_size = 8
+                arrow_base = np.array(axis_2d) - direction * arrow_size
+                arrow_left = arrow_base + perp * arrow_size * 0.5
+                arrow_right = arrow_base - perp * arrow_size * 0.5
+
+                pygame.draw.polygon(self.screen, color, [
+                    axis_2d,
+                    (int(arrow_left[0]), int(arrow_left[1])),
+                    (int(arrow_right[0]), int(arrow_right[1]))
+                ])
+
+            # Draw label
+            label_offset = 15
+            label_pos = (
+                int(axis_2d[0] + direction[0] * label_offset if length > 0 else axis_2d[0]),
+                int(axis_2d[1] + direction[1] * label_offset if length > 0 else axis_2d[1])
+            )
+            label_surface = self.font.render(label, True, color)
+            label_rect = label_surface.get_rect(center=label_pos)
+            self.screen.blit(label_surface, label_rect)
+
+        # Draw origin point
+        pygame.draw.circle(self.screen, (0, 0, 0), (origin_x, origin_y), 4, 0)
+
     def render(self, env, **kwargs):
         """
         Render the current scene.
@@ -396,12 +570,17 @@ class PyGameRenderer:
         if self.screen is None:
             self.initialize()
 
-        # Handle pygame events (for window closing)
+        # Handle pygame events (for window closing and mouse control)
         if self.render_mode == "human":
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.close()
                     return None
+                # Handle mouse input
+                self._handle_mouse_input(event)
+
+            # Handle keyboard input (continuous)
+            self._handle_keyboard_input()
 
         # Extract state from environment
         position = env.drone.position
@@ -455,6 +634,9 @@ class PyGameRenderer:
         self._draw_info_panel(position, velocity, orientation, target_position, wind_vector,
                              step_count, episode_time, **kwargs)
         self._draw_motor_bars()
+
+        # Draw coordinate system indicator
+        self._draw_coordinate_system()
 
         # Update display
         if self.render_mode == "human":

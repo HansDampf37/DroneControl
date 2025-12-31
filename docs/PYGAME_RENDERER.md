@@ -237,7 +237,9 @@ This may occur if the drone is far from the origin. The camera is centered at (0
 
 Potential improvements for the pygame renderer:
 
-- [ ] Interactive camera controls (mouse drag to rotate)
+- [x] Interactive camera controls (mouse drag to rotate) ✅
+- [x] Keyboard camera movement (WASD + Space/Shift) ✅
+- [x] Coordinate system indicator ✅
 - [ ] Zoom controls (mouse wheel)
 - [ ] Trail visualization (show drone's path)
 - [ ] Multiple camera views (split screen)
