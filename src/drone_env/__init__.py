@@ -4,6 +4,7 @@ import gymnasium
 from .drone import Drone
 from .env import DroneEnv, SequentialWaypointEnv, MotionPrimitiveActionWrapper, ThrustChangeController
 from .renderer import DroneEnvRenderer
+from .renderer_pygame import PyGameRenderer
 
 
 class RLlibDroneEnv(gymnasium.Wrapper):
@@ -90,6 +91,6 @@ class RLlibDroneEnv(gymnasium.Wrapper):
             self.env = wrapper_class(self.env)
 
 
-__all__ = ['DroneEnv', 'SequentialWaypointEnv', 'RLlibDroneEnv', 'DroneEnvRenderer', 'Drone']
+__all__ = ['DroneEnv', 'SequentialWaypointEnv', 'RLlibDroneEnv', 'DroneEnvRenderer', 'PyGameRenderer', 'Drone']
 __version__ = '0.1.0'
 

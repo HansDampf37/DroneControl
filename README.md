@@ -18,7 +18,8 @@ A Gymnasium-compatible Reinforcement Learning environment for quadcopter control
 - **Realistic Physics**: Simplified quadcopter physics with 4 independent motors in X-configuration
 - **Dynamic Wind**: Ornstein-Uhlenbeck process for realistic wind variations
 - **Dense Reward**: `((max_distance - distance) / max_distance) ** 2`
-- **Optimized 2-View Visualization**: Top view (XY) + Front view (XZ) like technical drawings
+- **Fast 3D Visualization**: High-performance pygame-based 3D renderer (60+ FPS)
+- **Alternative 2D Renderer**: Matplotlib-based multi-view renderer for detailed analysis
 - **Gymnasium-Compatible**: Standard RL interface
 - **Crash Detection**: Automatic episode termination on crash
 
@@ -51,8 +52,11 @@ python tests/test_env.py
 # Without visualization
 python examples/random_agent.py --episodes 5
 
-# With visualization
+# With visualization (using fast pygame 3D renderer)
 python examples/random_agent.py --episodes 3 --render
+
+# Demo the new pygame renderer
+python examples/demo_pygame_renderer.py
 ```
 
 ### Usage in Code
@@ -136,11 +140,27 @@ env = DroneEnv(
     wind_strength_range=(0.0, 5.0),     # Wind strength (m/s)
     use_wind=False,                      # Enable wind simulation
     render_mode="human",                 # "human", "rgb_array", None
+    renderer_type="pygame",              # "pygame" (fast 3D) or "matplotlib" (2D multi-view)
     enable_crash_detection=True,         # Enable crash detection
     crash_z_vel_threshold=-20.0,        # Crash velocity threshold
     crash_tilt_threshold=80.0            # Crash tilt threshold (degrees)
 )
 ```
+
+### Renderer Options
+
+- **pygame** (default): Fast 3D visualization with 60+ FPS performance
+  - Single 3D perspective view
+  - Drone shown as 5 spheres (body + 4 rotors)
+  - Arrows for orientation and velocity
+  - Best for real-time training monitoring
+  
+- **matplotlib**: Detailed multi-view renderer (10-12 FPS)
+  - Three 2D views: Top (XY), Front (XZ), Side (YZ)
+  - More detailed visualization
+  - Best for debugging and analysis
+
+See [Pygame Renderer Documentation](docs/PYGAME_RENDERER.md) for details.
 
 ## RL Training
 
@@ -191,12 +211,13 @@ drone-control/
 
 ## Additional Documentation
 
+- **[Pygame Renderer](docs/PYGAME_RENDERER.md)** - Fast 3D renderer guide and performance comparison
 - **[Development Guide](docs/DEVELOPMENT.md)** - Developer information, structure, extensions
 - **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues, especially rendering
 
 ## Roadmap
 
-- [ ] 3D visualization
+- [x] 3D visualization (pygame-based renderer)
 - [ ] Recurrent policies (wind inference without direct observation)
 - [ ] Multiple target points per episode
 - [ ] Obstacles

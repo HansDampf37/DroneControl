@@ -7,6 +7,7 @@ from gymnasium import spaces, Space
 
 from .drone import Drone
 from .renderer import DroneEnvRenderer
+from .renderer_pygame import PyGameRenderer
 from .wind import Wind
 
 
@@ -36,6 +37,7 @@ class DroneEnv(gym.Env[np.ndarray, np.ndarray]):
             wind_strength_range: Tuple[float, float] = (0.0, 5.0),  # m/s
             use_wind: bool = True,
             render_mode: Optional[str] = None,
+            renderer_type: str = "pygame",  # "pygame" or "matplotlib"
             # Crash detection parameters
             enable_crash_detection: bool = True,
             enable_out_of_bounds_detection: bool = True,
@@ -59,6 +61,9 @@ class DroneEnv(gym.Env[np.ndarray, np.ndarray]):
                 - None: No rendering (fastest)
                 - "human": Interactive matplotlib visualization
                 - "rgb_array": Returns RGB arrays for video recording
+            renderer_type: Type of renderer to use. Options are:
+                - "pygame": Fast pygame-based 3D renderer (default, recommended)
+                - "matplotlib": Slower matplotlib-based 2D multi-view renderer
             enable_crash_detection: Whether to detect and terminate on crashes.
                 If True, episode ends when crash is detected. Default is True.
             enable_out_of_bounds_detection: Whether to detect and terminate on large distances to the target position
@@ -174,8 +179,13 @@ class DroneEnv(gym.Env[np.ndarray, np.ndarray]):
         self.step_count = 0
         self.initial_distance = 0
 
-        # Rendering
-        self.renderer = DroneEnvRenderer(render_mode=render_mode, space_side_length=self.space_side_length)
+        # Rendering - choose renderer based on renderer_type
+        if renderer_type == "pygame":
+            self.renderer = PyGameRenderer(render_mode=render_mode, space_side_length=self.space_side_length)
+        elif renderer_type == "matplotlib":
+            self.renderer = DroneEnvRenderer(render_mode=render_mode, space_side_length=self.space_side_length)
+        else:
+            raise ValueError(f"Invalid renderer_type: {renderer_type}. Options are 'pygame' or 'matplotlib'.")
 
     def reset(
             self,
