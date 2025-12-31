@@ -502,9 +502,6 @@ class PyGameRenderer:
         y_2d = project_axis(y_rotated)
         z_2d = project_axis(z_rotated)
 
-        # Draw background circle
-        pygame.draw.circle(self.screen, (255, 255, 255), (origin_x, origin_y), 65, 0)
-        pygame.draw.circle(self.screen, (0, 0, 0), (origin_x, origin_y), 65, 2)
 
         # Draw axes with labels (draw in order of depth for proper occlusion)
         axes_data = [
@@ -641,7 +638,9 @@ class PyGameRenderer:
         # Update display
         if self.render_mode == "human":
             pygame.display.flip()
-            self.clock.tick(60)  # Cap at 60 FPS
+            # Match rendering rate to simulation timestep for real-time visualization
+            target_fps = 1.0 / dt if dt > 0 else 60
+            self.clock.tick(target_fps)
             return None
         elif self.render_mode == "rgb_array":
             # Convert pygame surface to RGB array
