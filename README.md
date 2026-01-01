@@ -169,8 +169,17 @@ See [Pygame Renderer Documentation](docs/PYGAME_RENDERER.md) for details.
 # Installation
 pip install ray[rllib] torch
 
-# Training
+# Training from scratch
 python examples/training.py --mode train --algorithm PPO --timesteps 100000
+
+# Resume training from existing checkpoint
+python examples/training.py --mode train --algorithm PPO --timesteps 500000 \
+    --load-weights models/drone_model
+
+# Fine-tune a baseline model
+python examples/training.py --mode train --algorithm PPO --timesteps 500000 \
+    --model-path models/fine_tuned_model \
+    --load-weights models/drone_model_working_baseline_smooth
 
 # Evaluation
 python examples/training.py --mode eval --algorithm PPO --model-path models/drone_model

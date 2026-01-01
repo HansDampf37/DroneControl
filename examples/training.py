@@ -69,7 +69,7 @@ class CustomMetricsCallback(DefaultCallbacks):
             metrics_logger.log_value(f"custom_logs/{key}", value)
 
 
-def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../models/drone_model'):
+def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../models/drone_model', load_weights_from=None):
     """
     Trains an RL agent with Ray RLlib.
 
@@ -77,6 +77,7 @@ def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../mode
         algorithm: RL algorithm ('PPO', 'SAC', 'APPO'). Default is 'PPO'.
         total_timesteps: Number of training steps. Default is 100000.
         save_path: Path to save the trained model. Default is '../models/drone_model'.
+        load_weights_from: Path to existing checkpoint to load weights from. Default is None.
     """
     # Initialize Ray
     if not ray.is_initialized():
@@ -171,8 +172,27 @@ def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../mode
 
     algo = None
     try:
-        # Create algorithm
-        algo = config.build()
+        # Create algorithm or load from checkpoint
+        if load_weights_from:
+            load_weights_from = os.path.abspath(load_weights_from)
+            print(f"Loading weights from existing checkpoint: {load_weights_from}")
+
+            algo_class = {'PPO': PPO, 'SAC': SAC, 'APPO': APPO}.get(algorithm)
+            if algo_class is None:
+                print(f"ERROR: Unknown algorithm '{algorithm}'")
+                ray.shutdown()
+                return None
+
+            try:
+                algo = algo_class.from_checkpoint(load_weights_from)
+                print(f"✓ Successfully loaded {algorithm} checkpoint")
+                print(f"  Continuing training from loaded weights...")
+            except Exception as e:
+                print(f"ERROR: Could not load checkpoint: {e}")
+                print(f"  Will create new model instead")
+                algo = config.build()
+        else:
+            algo = config.build()
 
         # Training loop
         for i in range(num_iterations):
@@ -343,6 +363,8 @@ if __name__ == "__main__":
                         help='Number of training timesteps')
     parser.add_argument('--model-path', type=str, default='models/drone_model',
                         help='Path to model (for saving/loading)')
+    parser.add_argument('--load-weights', type=str, default=None,
+                        help='Path to existing checkpoint to load weights from (for training mode)')
     parser.add_argument('--episodes', type=int, default=5,
                         help='Number of evaluation episodes')
     parser.add_argument('--no-render', action='store_true',
@@ -357,12 +379,15 @@ if __name__ == "__main__":
         print(f"Algorithm: {args.algorithm}")
         print(f"Timesteps: {args.timesteps}")
         print(f"Model Path: {args.model_path}")
+        if args.load_weights:
+            print(f"Load Weights From: {args.load_weights}")
         print("=" * 60)
 
         train_with_rllib(
             algorithm=args.algorithm,
             total_timesteps=args.timesteps,
-            save_path=args.model_path
+            save_path=args.model_path,
+            load_weights_from=args.load_weights
         )
 
     elif args.mode == 'eval':
