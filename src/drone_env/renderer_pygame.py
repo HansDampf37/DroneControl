@@ -33,8 +33,8 @@ class PyGameRenderer:
         self.space_side_length = space_side_length
 
         # Screen settings
-        self.screen_width = 1200
-        self.screen_height = 900
+        self.screen_width = 1920
+        self.screen_height = 1080
         self.screen = None
         self.clock = None
 
@@ -63,10 +63,13 @@ class PyGameRenderer:
         self.VELOCITY_ARROW_COLOR = (255, 0, 255)  # Magenta
         self.GROUND_COLOR = (139, 90, 60)
         self.TEXT_COLOR = (0, 0, 0)
+        self.WIND_COLOR = (200, 0, 0)  # Red
+        self.DROP_LINE_COLOR = (128, 128, 128)  # Gray
 
         # Font
         self.font = None
         self.font_small = None
+        self.font_large = None
 
         # Current motor thrusts for visualization
         self.current_motor_thrusts = np.zeros(4, dtype=np.float32)
@@ -86,8 +89,9 @@ class PyGameRenderer:
             self.screen = pygame.Surface((self.screen_width, self.screen_height))
 
         self.clock = pygame.time.Clock()
-        self.font = pygame.font.Font(None, 28)
-        self.font_small = pygame.font.Font(None, 20)
+        self.font_large = pygame.font.Font(None, 36)
+        self.font = pygame.font.Font(None, 32)
+        self.font_small = pygame.font.Font(None, 24)
 
     def _project_3d_to_2d(self, point_3d: np.ndarray) -> Tuple[int, int]:
         """
@@ -284,16 +288,17 @@ class PyGameRenderer:
             self._draw_line_3d(tip, base3, color, width)
             self._draw_line_3d(tip, base4, color, width)
 
-    def _draw_drop_line(self, position: np.ndarray, color: Tuple[int, int, int],
-                        width: int = 1, dashed: bool = True):
+    def _draw_drop_line(self, position: np.ndarray, color: Tuple[int, int, int] = (128, 128, 128),
+                        width: int = 1, dashed: bool = True, dash_length: float = 0.1):
         """
         Draw a vertical line from a position down to the XY-plane (z=0).
 
         Args:
             position: 3D position [x, y, z]
-            color: Line color
+            color: Line color (default: gray)
             width: Line width
             dashed: If True, draw a dashed line
+            dash_length: Length of each dash segment in meters (default: 0.1m)
         """
         # Start point (object position)
         start = position.copy()
@@ -302,13 +307,30 @@ class PyGameRenderer:
         end[2] = 0.0  # Set z to 0 (ground plane)
 
         if dashed:
-            # Draw dashed line
-            num_segments = 10
-            for i in range(num_segments):
-                if i % 2 == 0:  # Draw every other segment
-                    segment_start = start + (end - start) * (i / num_segments)
-                    segment_end = start + (end - start) * ((i + 1) / num_segments)
-                    self._draw_line_3d(segment_start, segment_end, color, width)
+            # Calculate total line length
+            total_length = float(np.linalg.norm(end - start))
+
+            if total_length < 1e-6:
+                return  # Don't draw if line is too short
+
+            # Calculate number of segments based on fixed dash length
+            num_dashes = max(1, int(total_length / dash_length))
+            segment_length = total_length / (2 * num_dashes)  # Account for gaps
+
+            # Draw dashed line with consistent segment lengths
+            direction = (end - start) / total_length
+            current_pos = 0.0
+
+            while current_pos < total_length:
+                # Draw a dash
+                segment_start = start + direction * current_pos
+                segment_end_pos = min(current_pos + segment_length, total_length)
+                segment_end = start + direction * segment_end_pos
+
+                self._draw_line_3d(segment_start, segment_end, color, width)
+
+                # Skip a gap (same length as dash)
+                current_pos += 2 * segment_length
         else:
             # Draw solid line
             self._draw_line_3d(start, end, color, width)
@@ -343,16 +365,24 @@ class PyGameRenderer:
             self.GROUND_COLOR, 2
         )
 
-    def _draw_drone(self, position: np.ndarray, rotation_matrix: np.ndarray, rotor_positions: np.ndarray):
+    def _draw_drone(self, position: np.ndarray, rotation_matrix: np.ndarray, rotor_positions: np.ndarray, wind_vector: np.ndarray = None):
         """Draw the drone with body and rotors."""
         rotor_scale = 1.2
 
-        # Rotor colors (0,2 are CW, 1,3 are CCW)
+        # Rotor colors - diagonal motors have the same rotation direction
+        # Motor layout (looking from above):
+        #   0(CW)     1(CCW)
+        #        \ | /
+        #         \|/
+        #        --+--
+        #         /|\
+        #        / | \
+        #   2(CCW)    3(CW)
         rotor_colors = [
-            self.ROTOR_CW_COLOR,  # Motor 0 - CW
-            self.ROTOR_CCW_COLOR,  # Motor 1 - CCW
-            self.ROTOR_CW_COLOR,  # Motor 2 - CW
-            self.ROTOR_CCW_COLOR   # Motor 3 - CCW
+            self.ROTOR_CW_COLOR,   # Motor 0 - CW (front-right)
+            self.ROTOR_CCW_COLOR,  # Motor 1 - CCW (front-left)
+            self.ROTOR_CCW_COLOR,  # Motor 2 - CCW (rear-left)
+            self.ROTOR_CW_COLOR    # Motor 3 - CW (rear-right)
         ]
 
         # Draw rotors first (so they appear behind the body if needed)
@@ -370,6 +400,11 @@ class PyGameRenderer:
 
         # Draw main body
         self._draw_sphere(position, 0.08, self.DRONE_BODY_COLOR)
+
+        # Draw wind direction arrow on the drone
+        if wind_vector is not None and np.linalg.norm(wind_vector) > 0.1:
+            wind_normalized = wind_vector / np.linalg.norm(wind_vector)
+            self._draw_arrow_3d(position, wind_normalized, self.WIND_COLOR, scale=0.4, width=2)
 
     def _draw_target(self, target_position: np.ndarray):
         """Draw the target position."""
@@ -578,6 +613,126 @@ class PyGameRenderer:
         # Draw origin point
         pygame.draw.circle(self.screen, (0, 0, 0), (origin_x, origin_y), 4, 0)
 
+    def _draw_wind_indicator(self, wind_vector: np.ndarray):
+        """Draw wind direction indicator in the top-right corner."""
+        # Position in top-right corner
+        origin_x = self.screen_width - 100
+        origin_y = 100
+        arrow_scale = 40  # Base scale for arrow
+
+        # Draw background circle
+        pygame.draw.circle(self.screen, (255, 255, 255), (origin_x, origin_y), 50)
+        pygame.draw.circle(self.screen, (0, 0, 0), (origin_x, origin_y), 50, 2)
+
+        # Calculate wind magnitude and direction
+        wind_mag = np.linalg.norm(wind_vector)
+
+        if wind_mag > 0.1:
+            # Normalize wind vector
+            wind_normalized = wind_vector / wind_mag
+
+            # Apply camera rotation to wind vector
+            angle_h_rad = np.deg2rad(self.camera_angle_h)
+            angle_v_rad = np.deg2rad(self.camera_angle_v)
+
+            # Rotate around Z axis
+            x_rot = wind_normalized[0] * np.cos(angle_h_rad) - wind_normalized[1] * np.sin(angle_h_rad)
+            y_rot = wind_normalized[0] * np.sin(angle_h_rad) + wind_normalized[1] * np.cos(angle_h_rad)
+            z_rot = wind_normalized[2]
+
+            # Rotate around X axis
+            y_final = y_rot * np.cos(angle_v_rad) - z_rot * np.sin(angle_v_rad)
+            z_final = y_rot * np.sin(angle_v_rad) + z_rot * np.cos(angle_v_rad)
+
+            # Project to 2D (simple orthographic for the indicator)
+            arrow_end_x = int(origin_x + x_rot * arrow_scale)
+            arrow_end_y = int(origin_y - z_final * arrow_scale - y_final * arrow_scale * 0.5)
+
+            # Draw arrow
+            pygame.draw.line(self.screen, self.WIND_COLOR, (origin_x, origin_y),
+                            (arrow_end_x, arrow_end_y), 4)
+
+            # Draw arrowhead
+            direction = np.array([arrow_end_x - origin_x, arrow_end_y - origin_y], dtype=float)
+            length = np.linalg.norm(direction)
+            if length > 0:
+                direction = direction / length
+                perp = np.array([-direction[1], direction[0]])
+
+                arrow_size = 10
+                arrow_base = np.array([arrow_end_x, arrow_end_y]) - direction * arrow_size
+                arrow_left = arrow_base + perp * arrow_size * 0.5
+                arrow_right = arrow_base - perp * arrow_size * 0.5
+
+                pygame.draw.polygon(self.screen, self.WIND_COLOR, [
+                    (arrow_end_x, arrow_end_y),
+                    (int(arrow_left[0]), int(arrow_left[1])),
+                    (int(arrow_right[0]), int(arrow_right[1]))
+                ])
+
+        # Draw wind speed label
+        wind_text = self.font_small.render(f"{wind_mag:.1f}m/s", True, self.TEXT_COLOR)
+        wind_rect = wind_text.get_rect(center=(origin_x, origin_y + 65))
+        self.screen.blit(wind_text, wind_rect)
+
+        # Draw "Wind" label
+        label_text = self.font_small.render("Wind", True, self.TEXT_COLOR)
+        label_rect = label_text.get_rect(center=(origin_x, origin_y - 65))
+        self.screen.blit(label_text, label_rect)
+
+    def _draw_legend(self):
+        """Draw a legend explaining the visual elements."""
+        legend_x = self.screen_width - 200
+        legend_y = 200  # Upper right corner, below wind indicator
+        legend_width = 190
+        line_height = 30
+
+        legend_items = [
+            ("Drone Body", self.DRONE_BODY_COLOR),
+            ("CW Rotor", self.ROTOR_CW_COLOR),
+            ("CCW Rotor", self.ROTOR_CCW_COLOR),
+            ("Target", self.TARGET_COLOR),
+            ("Up Direction", self.UP_ARROW_COLOR),
+            ("Velocity", self.VELOCITY_ARROW_COLOR),
+            ("Drop Line", self.DROP_LINE_COLOR),
+            ("Wind", self.WIND_COLOR),
+        ]
+
+        legend_height = len(legend_items) * line_height + 40
+
+        # Draw background
+        panel_surface = pygame.Surface((legend_width, legend_height))
+        panel_surface.set_alpha(200)
+        panel_surface.fill((255, 255, 255))
+        self.screen.blit(panel_surface, (legend_x, legend_y))
+
+        # Draw border
+        pygame.draw.rect(self.screen, (0, 0, 0),
+                        (legend_x, legend_y, legend_width, legend_height), 2)
+
+        # Draw title
+        title = self.font_small.render("Legend", True, self.TEXT_COLOR)
+        self.screen.blit(title, (legend_x + 10, legend_y + 10))
+
+        # Draw legend items
+        for i, (label, color) in enumerate(legend_items):
+            y_pos = legend_y + 40 + i * line_height
+
+            # Draw color indicator
+            if label in ["Up Direction", "Velocity", "Drop Line"]:
+                # Draw line for arrows/lines
+                pygame.draw.line(self.screen, color,
+                               (legend_x + 10, y_pos + 10),
+                               (legend_x + 30, y_pos + 10), 3)
+            else:
+                # Draw circle for objects
+                pygame.draw.circle(self.screen, color,
+                                 (legend_x + 20, y_pos + 10), 8)
+
+            # Draw label text
+            text = self.font_small.render(label, True, self.TEXT_COLOR)
+            self.screen.blit(text, (legend_x + 40, y_pos + 2))
+
     def render(self, env, **kwargs):
         """
         Render the current scene.
@@ -631,9 +786,9 @@ class PyGameRenderer:
         # Draw grid
         self._draw_grid()
 
-        # Draw drop lines to ground plane
-        self._draw_drop_line(position, (100, 150, 200), width=2, dashed=True)  # Drone drop line (blue-ish)
-        self._draw_drop_line(target_position, (100, 200, 100), width=2, dashed=True)  # Target drop line (green-ish)
+        # Draw drop lines to ground plane (gray, dashed, consistent segment lengths)
+        self._draw_drop_line(position, width=1, dashed=True)  # Drone drop line
+        self._draw_drop_line(target_position, width=1, dashed=True)  # Target drop line
 
         # Draw connection line from drone to target
         self._draw_line_3d(position, target_position, (150, 150, 150), 1)
@@ -642,7 +797,7 @@ class PyGameRenderer:
         self._draw_target(target_position)
 
         # Draw drone
-        self._draw_drone(position, rotation_matrix, rotor_positions)
+        self._draw_drone(position, rotation_matrix, rotor_positions, wind_vector)
 
         # Draw orientation arrow (up direction)
         normal_body = np.array([0, 0, 1])
@@ -654,19 +809,13 @@ class PyGameRenderer:
             vel_normalized = velocity / np.linalg.norm(velocity)
             self._draw_arrow_3d(position, vel_normalized, self.VELOCITY_ARROW_COLOR, scale=0.5, width=3)
 
-        # Draw wind indicator
-        if np.linalg.norm(wind_vector) > 0.1:
-            wind_pos = np.array([-self.space_side_length * 0.8, self.space_side_length * 0.8, self.space_side_length * 0.8])
-            wind_normalized = wind_vector / np.linalg.norm(wind_vector)
-            self._draw_arrow_3d(wind_pos, wind_normalized, (200, 0, 0), scale=0.5, width=3)
-
         # Draw UI elements
         self._draw_info_panel(position, velocity, orientation, target_position, wind_vector,
                              step_count, episode_time, **kwargs)
         self._draw_motor_bars()
-
-        # Draw coordinate system indicator
         self._draw_coordinate_system()
+        self._draw_wind_indicator(wind_vector)
+        self._draw_legend()
 
         # Update display
         if self.render_mode == "human":
