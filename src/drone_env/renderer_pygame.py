@@ -599,56 +599,40 @@ class PyGameRenderer:
         y_axis = np.array([0, 1, 0])
         z_axis = np.array([0, 0, 1])
 
-        # Apply camera rotation to axes
-        angle_h_rad = np.deg2rad(self.camera_angle_h)
-        angle_v_rad = np.deg2rad(self.camera_angle_v)
+        # Get camera basis vectors (these are already correctly oriented)
+        forward, right, up = self._get_camera_vectors()
 
-        def rotate_axis(axis):
-            # Rotate around Z axis
-            x_rot = axis[0] * np.cos(angle_h_rad) - axis[1] * np.sin(angle_h_rad)
-            y_rot = axis[0] * np.sin(angle_h_rad) + axis[1] * np.cos(angle_h_rad)
-            z_rot = axis[2]
-
-            # Rotate around X axis
-            y_final = y_rot * np.cos(angle_v_rad) - z_rot * np.sin(angle_v_rad)
-            z_final = y_rot * np.sin(angle_v_rad) + z_rot * np.cos(angle_v_rad)
-
-            return np.array([x_rot, y_final, z_final])
-
-        # Rotate axes
-        x_rotated = rotate_axis(x_axis)
-        y_rotated = rotate_axis(y_axis)
-        z_rotated = rotate_axis(z_axis)
-
-        # Project to 2D (simple orthographic for the indicator)
         def project_axis(axis_3d):
+            # Project axis onto camera's right and up vectors (ignoring forward/depth)
+            x_component = np.dot(axis_3d, right)
+            y_component = np.dot(axis_3d, up)
+
             return (
-                int(origin_x + axis_3d[0] * axis_length),
-                int(origin_y - axis_3d[2] * axis_length - axis_3d[1] * axis_length * 0.5)
+                int(origin_x + x_component * axis_length),
+                int(origin_y - y_component * axis_length)
             )
 
-        x_2d = project_axis(x_rotated)
-        y_2d = project_axis(y_rotated)
-        z_2d = project_axis(z_rotated)
-
+        x_2d = project_axis(x_axis)
+        y_2d = project_axis(y_axis)
+        z_2d = project_axis(z_axis)
 
         # Draw axes with labels (draw in order of depth for proper occlusion)
         axes_data = [
-            (x_rotated, x_2d, (255, 0, 0), 'X'),    # Red
-            (y_rotated, y_2d, (0, 255, 0), 'Y'),    # Green
-            (z_rotated, z_2d, (0, 100, 255), 'Z')   # Blue
+            (np.dot(x_axis, forward), x_2d, (255, 0, 0), 'X'),    # Red
+            (np.dot(y_axis, forward), y_2d, (0, 255, 0), 'Y'),    # Green
+            (np.dot(z_axis, forward), z_2d, (0, 100, 255), 'Z')   # Blue
         ]
 
-        # Sort by depth (y component after rotation, negative = further)
-        axes_data.sort(key=lambda a: a[0][1])
+        # Sort by depth (higher forward component = further from camera)
+        axes_data.sort(key=lambda a: a[0])
 
         # Draw axes
-        for axis_3d, axis_2d, color, label in axes_data:
+        for depth, axis_2d, color, label in axes_data:
             # Draw axis line
             pygame.draw.line(self.screen, color, (origin_x, origin_y), axis_2d, 3)
 
             # Draw arrowhead
-            direction = np.array([axis_2d[0] - origin_x, axis_2d[1] - origin_y])
+            direction = np.array([axis_2d[0] - origin_x, axis_2d[1] - origin_y], dtype=float)
             length = np.linalg.norm(direction)
             if length > 0:
                 direction = direction / length
