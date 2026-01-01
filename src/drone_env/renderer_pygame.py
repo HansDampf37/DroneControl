@@ -41,8 +41,11 @@ class PyGameRenderer:
         # Camera settings
         self.camera_distance = space_side_length * 2.5
         self.camera_angle_h = 45  # Horizontal angle (degrees)
-        self.camera_angle_v = 30  # Vertical angle (degrees)
+        self.camera_angle_v = -30  # Vertical angle (degrees)
         self.camera_position = np.array([0.0, 0.0, 0.0], dtype=np.float32)  # Camera offset
+        self.fov = 60  # Field of view in degrees
+        self.near_clip = 0.1  # Near clipping plane
+        self.far_clip = 100.0  # Far clipping plane
 
         # Mouse control state
         self.mouse_dragging = False
@@ -93,9 +96,38 @@ class PyGameRenderer:
         self.font = pygame.font.Font(None, 32)
         self.font_small = pygame.font.Font(None, 24)
 
+    def _get_camera_vectors(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Get camera basis vectors (forward, right, up).
+
+        Returns:
+            Tuple of (forward, right, up) unit vectors
+        """
+        angle_h_rad = np.deg2rad(self.camera_angle_h)
+        angle_v_rad = np.deg2rad(self.camera_angle_v)
+
+        # Forward direction
+        forward = np.array([
+            np.sin(angle_h_rad) * np.cos(angle_v_rad),
+            np.cos(angle_h_rad) * np.cos(angle_v_rad),
+            np.sin(angle_v_rad)
+        ])
+
+        # Right direction (perpendicular to forward)
+        right = np.array([
+            np.cos(angle_h_rad),
+            -np.sin(angle_h_rad),
+            0
+        ])
+
+        # Up direction (perpendicular to both)
+        up = np.cross(right, forward)
+
+        return forward, right, up
+
     def _project_3d_to_2d(self, point_3d: np.ndarray) -> Tuple[int, int]:
         """
-        Project a 3D point to 2D screen coordinates using isometric-like projection.
+        Project a 3D point to 2D screen coordinates using perspective projection.
 
         Args:
             point_3d: 3D point [x, y, z] in world coordinates
@@ -103,27 +135,37 @@ class PyGameRenderer:
         Returns:
             Tuple of (screen_x, screen_y) coordinates
         """
-        # Apply camera offset
-        x, y, z = point_3d - self.camera_position
+        # Get camera vectors
+        forward, right, up = self._get_camera_vectors()
 
-        # Apply camera rotation
-        angle_h_rad = np.deg2rad(self.camera_angle_h)
-        angle_v_rad = np.deg2rad(self.camera_angle_v)
+        # Camera position in world space
+        camera_pos = self.camera_position - forward * self.camera_distance
 
-        # Rotate around Z axis (horizontal rotation)
-        x_rot = x * np.cos(angle_h_rad) - y * np.sin(angle_h_rad)
-        y_rot = x * np.sin(angle_h_rad) + y * np.cos(angle_h_rad)
-        z_rot = z
+        # Transform point to camera space
+        point_relative = point_3d - camera_pos
 
-        # Rotate around X axis (vertical rotation)
-        y_final = y_rot * np.cos(angle_v_rad) - z_rot * np.sin(angle_v_rad)
-        z_final = y_rot * np.sin(angle_v_rad) + z_rot * np.cos(angle_v_rad)
-        x_final = x_rot
+        # Project onto camera basis vectors
+        x_cam = np.dot(point_relative, right)
+        y_cam = np.dot(point_relative, up)
+        z_cam = np.dot(point_relative, forward)
+
+        # Perspective division
+        if z_cam < self.near_clip:
+            # Point is behind camera or too close
+            return -1000, -1000  # Off-screen
+
+        # Calculate perspective scale factor
+        aspect_ratio = self.screen_width / self.screen_height
+        fov_rad = np.deg2rad(self.fov)
+        f = 1.0 / np.tan(fov_rad / 2.0)
 
         # Perspective projection
-        scale = 200  # pixels per meter
-        screen_x = int(self.screen_width / 2 + x_final * scale)
-        screen_y = int(self.screen_height / 2 - z_final * scale - y_final * scale * 0.5)
+        x_ndc = (x_cam / z_cam) * f / aspect_ratio
+        y_ndc = (y_cam / z_cam) * f
+
+        # Convert from NDC [-1, 1] to screen coordinates
+        screen_x = int((x_ndc + 1.0) * 0.5 * self.screen_width)
+        screen_y = int((1.0 - y_ndc) * 0.5 * self.screen_height)
 
         return screen_x, screen_y
 
@@ -137,18 +179,31 @@ class PyGameRenderer:
         Returns:
             Depth value (higher = further away)
         """
-        x, y, z = point_3d - self.camera_position
-        angle_h_rad = np.deg2rad(self.camera_angle_h)
-        angle_v_rad = np.deg2rad(self.camera_angle_v)
+        forward, _, _ = self._get_camera_vectors()
+        camera_pos = self.camera_position - forward * self.camera_distance
+        point_relative = point_3d - camera_pos
 
-        # Rotate around Z axis
-        x_rot = x * np.cos(angle_h_rad) - y * np.sin(angle_h_rad)
-        y_rot = x * np.sin(angle_h_rad) + y * np.cos(angle_h_rad)
+        return np.dot(point_relative, forward)
 
-        # Rotate around X axis
-        y_final = y_rot * np.cos(angle_v_rad) - z * np.sin(angle_v_rad)
+    def _get_perspective_scale(self, point_3d: np.ndarray) -> float:
+        """
+        Get perspective scale factor for a 3D point.
 
-        return y_final
+        Args:
+            point_3d: 3D point [x, y, z]
+
+        Returns:
+            Scale factor (smaller for distant objects)
+        """
+        depth = self._get_depth(point_3d)
+        if depth < self.near_clip:
+            return 0.0
+
+        fov_rad = np.deg2rad(self.fov)
+        f = 1.0 / np.tan(fov_rad / 2.0)
+
+        # Scale decreases with distance
+        return f / depth * 200  # 200 is base scale in pixels
 
     def _handle_keyboard_input(self):
         """Handle keyboard input for camera movement."""
@@ -221,13 +276,20 @@ class PyGameRenderer:
                 self.last_mouse_pos = current_pos
 
     def _draw_sphere(self, position: np.ndarray, radius: float, color: Tuple[int, int, int]):
-        """Draw a 3D sphere at the given position."""
+        """Draw a 3D sphere at the given position with perspective."""
         screen_x, screen_y = self._project_3d_to_2d(position)
 
-        # Scale radius based on perspective (simple approach)
-        screen_radius = int(radius * 200)  # 200 pixels per meter
+        # Check if point is visible
+        if screen_x < -500 or screen_x > self.screen_width + 500:
+            return
+        if screen_y < -500 or screen_y > self.screen_height + 500:
+            return
 
-        if screen_radius > 0 and 0 <= screen_x < self.screen_width and 0 <= screen_y < self.screen_height:
+        # Scale radius based on perspective
+        scale = self._get_perspective_scale(position)
+        screen_radius = int(radius * scale)
+
+        if screen_radius > 0:
             # Draw filled circle with anti-aliasing
             gfxdraw.filled_circle(self.screen, screen_x, screen_y, screen_radius, color)
             gfxdraw.aacircle(self.screen, screen_x, screen_y, screen_radius, color)
@@ -237,13 +299,15 @@ class PyGameRenderer:
             highlight_radius = max(1, screen_radius // 3)
             highlight_offset_x = -screen_radius // 4
             highlight_offset_y = -screen_radius // 4
-            gfxdraw.filled_circle(
-                self.screen,
-                screen_x + highlight_offset_x,
-                screen_y + highlight_offset_y,
-                highlight_radius,
-                highlight_color
-            )
+
+            if highlight_radius > 0:
+                gfxdraw.filled_circle(
+                    self.screen,
+                    screen_x + highlight_offset_x,
+                    screen_y + highlight_offset_y,
+                    highlight_radius,
+                    highlight_color
+                )
 
     def _draw_line_3d(self, start: np.ndarray, end: np.ndarray, color: Tuple[int, int, int], width: int = 2):
         """Draw a line in 3D space."""
@@ -371,19 +435,23 @@ class PyGameRenderer:
 
         # Rotor colors - diagonal motors have the same rotation direction
         # Motor layout (looking from above):
-        #   0(CW)     1(CCW)
+        #   0(CW)     2(CCW)
         #        \ | /
         #         \|/
         #        --+--
         #         /|\
         #        / | \
-        #   2(CCW)    3(CW)
+        #   3(CCW)    1(CW)
         rotor_colors = [
             self.ROTOR_CW_COLOR,   # Motor 0 - CW (front-right)
-            self.ROTOR_CCW_COLOR,  # Motor 1 - CCW (front-left)
-            self.ROTOR_CCW_COLOR,  # Motor 2 - CCW (rear-left)
-            self.ROTOR_CW_COLOR    # Motor 3 - CW (rear-right)
+            self.ROTOR_CW_COLOR,   # Motor 1 - CW (rear-right)
+            self.ROTOR_CCW_COLOR,  # Motor 2 - CCW (front-left)
+            self.ROTOR_CCW_COLOR,  # Motor 3 - CCW (rear-left)
+
         ]
+
+        # Draw main body
+        self._draw_sphere(position, 0.2, self.DRONE_BODY_COLOR)
 
         # Draw rotors first (so they appear behind the body if needed)
         for i, (rotor_pos_body, color) in enumerate(zip(rotor_positions, rotor_colors)):
@@ -393,13 +461,10 @@ class PyGameRenderer:
             rotor_world_position = position + rotor_pos_world_scaled
 
             # Draw rotor sphere (smaller than body)
-            self._draw_sphere(rotor_world_position, 0.04, color)
+            self._draw_sphere(rotor_world_position, 0.1, color)
 
             # Draw arm connecting to body
             self._draw_line_3d(position, rotor_world_position, (100, 100, 100), 2)
-
-        # Draw main body
-        self._draw_sphere(position, 0.08, self.DRONE_BODY_COLOR)
 
         # Draw wind direction arrow on the drone
         if wind_vector is not None and np.linalg.norm(wind_vector) > 0.1:
