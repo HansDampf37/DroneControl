@@ -782,12 +782,13 @@ class PyGameRenderer:
             text = self.font_small.render(label, True, self.TEXT_COLOR)
             self.screen.blit(text, (legend_x + 40, y_pos + 2))
 
-    def render(self, env, **kwargs):
+    def render(self, env, skip_event_handling=False, **kwargs):
         """
         Render the current scene.
 
         Args:
             env: DroneEnv instance containing state information
+            skip_event_handling: If True, skip pygame event handling (for external control)
             kwargs: Additional info to display
 
         Returns:
@@ -801,7 +802,7 @@ class PyGameRenderer:
             self.initialize()
 
         # Handle pygame events (for window closing and mouse control)
-        if self.render_mode == "human":
+        if self.render_mode == "human" and not skip_event_handling:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.close()

@@ -1,36 +1,35 @@
 """
-Manual test for drone control.
+Manual test for drone control with Pygame renderer.
 
 Controls:
-- Keys 1-4: Set/toggle Motor 1-4 to 100%
-- Keys Q/W/E/R: Set/toggle Motor 1-4 to 50%
-- Key 0: All motors OFF
-- Key SPACE: All motors to 25% (hover attempt)
+- Keys 1-4: Increase thrust for Motor 1-4 (hold to continue increasing)
+- Keys 5-8: Decrease thrust for Motor 1-4 (hold to continue decreasing)
+- Release key: Thrust returns to hover state
 - Key ESC or X: Exit
-- Key R: Reset
+- Key R: Reset drone position and orientation
+- Mouse Drag: Rotate camera view
+- Arrow Keys/WASD: Move camera position
 
-The visualization shows the drone from above.
-Motor configuration (X-formation):
+The visualization shows the drone in 3D.
+Motor configuration (X-configuration):
   Motor 2 (front-left, CCW)
          ○
-        / \
-       /   \
+        / \\
+       /   \\
 Motor 0 ○   ○ Motor 3
-(front-  \   / (rear-
-right,   \ /  right,
+(front-  \\   / (rear-
+right,   \\ /  right,
 CW)        ○   CW)
-    Motor 1 (rear-left, CW)
+    Motor 1 (rear-left, CCW)
 """
 import sys
 from pathlib import Path
 
-from src.drone_env.env import ThrustChangeController
-
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import numpy as np
-from src.drone_env import DroneEnv, MotionPrimitiveActionWrapper
-import matplotlib.pyplot as plt
+from src.drone_env import DroneEnv
+import pygame
 import time
 
 
@@ -38,19 +37,36 @@ class ManualDroneController:
     """Interactive controller for manual drone control."""
 
     def __init__(self):
-        # dt=0.1 corresponds to 10 FPS (1/0.01 = 100 Hz)
-        self.dt = 0.1  # Timestep in seconds
+        # dt=0.01 corresponds to 100 FPS (1/0.01 = 100 Hz)
+        self.dt = 0.01  # Timestep in seconds
 
-        self.env = MotionPrimitiveActionWrapper(ThrustChangeController(DroneEnv(
+        # Create environment with pygame renderer
+        self.env = DroneEnv(
             max_steps=10000,
             render_mode="human",
+            renderer_type="pygame",  # Use pygame renderer
             enable_crash_detection=False,
             dt=self.dt,
             use_wind=False,
-        )))
+        )
 
-        # Motor states
-        self.motor_power_changes = np.array([0.0, 0.0, 0.0, 0.0])
+        # Calculate hover thrust (equal thrust on all motors to balance weight)
+        # For a 1kg drone, weight = mass * g = 1.0 * 9.81 = 9.81 N
+        # Each motor needs to provide 1/4 of the weight
+        # hover_thrust_per_motor = (mass * gravity) / (4 * max_thrust_per_motor)
+        # Assuming max_thrust_per_motor ~ 4.0 N (from drone.py defaults)
+        self.hover_thrust = 0.495  # Approximate hover thrust for 1kg drone
+        self.env.drone.enable_pendulum = True
+        self.env.drone.pendulum_k = 1
+
+        # Motor thrust states (start at hover)
+        self.motor_thrusts = np.array([self.hover_thrust] * 4, dtype=np.float32)
+
+        # Thrust change rate (per second)
+        self.thrust_change_rate = 0.5  # Change by 0.5 (50%) per second
+
+        # Track which keys are currently pressed
+        self.keys_pressed = set()
 
         # Simulation state
         self.running = True
@@ -72,88 +88,127 @@ class ManualDroneController:
         self.obs, self.info = self.env.reset()
         self.episode_count = 1
         print("=" * 60)
-        print("MANUAL DRONE CONTROL")
+        print("MANUAL DRONE CONTROL (Pygame Renderer)")
         print("=" * 60)
         print(f"\nSIMULATION PARAMETERS:")
         print(f"  Timestep (dt): {self.dt}s")
         print(f"  Target FPS: {self.target_fps:.0f}")
         print(f"  Frame time: {self.target_frame_time*1000:.1f}ms")
+        print(f"  Hover thrust: {self.hover_thrust:.2f}")
         print("\nCONTROLS:")
-        print("  1-4     : Actions 1-4 (100%)")
-        print("  5-8     : Actions 1-4 (0%)")
-        print("  X or ESC : Exit")
-        print("  R       : Reset (position & orientation)")
-        print("\nMOTOR CONFIGURATION (X-formation):")
-        print("     2(FL)")
+        print("  1-4       : Increase thrust for Motor 1-4 (hold)")
+        print("  5-8       : Decrease thrust for Motor 1-4 (hold)")
+        print("  Release   : Return to hover thrust")
+        print("  Mouse Drag: Rotate camera")
+        print("  Arrow/WASD: Move camera")
+        print("  R         : Reset drone")
+        print("  X or ESC  : Exit")
+        print("\nMOTOR CONFIGURATION (X-configuration):")
+        print("     2(FL,CCW)")
         print("      ○")
         print("     / \\")
         print("  0 ○   ○ 3")
-        print("   (FR)  (RR)")
+        print("   (FR,CW) (RR,CW)")
         print("     \\ /")
         print("      ○")
-        print("     1(RL)")
-        print("\nFL=front-left(CCW), FR=front-right(CW)")
-        print("RL=rear-left(CW), RR=rear-right(CW)")
+        print("     1(RL,CCW)")
+        print("\nFL=front-left, FR=front-right")
+        print("RL=rear-left, RR=rear-right")
+        print("CW=clockwise, CCW=counter-clockwise")
         print("=" * 60)
-        print("Press keys in the Matplotlib window!\n")
+        print("Control the drone in the Pygame window!\n")
 
-    def on_key_press(self, event):
-        """Handle keyboard inputs."""
-        key = event.key
+    def handle_pygame_events(self):
+        """Handle pygame events for motor control and forward camera events to renderer."""
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                print("\nExiting...")
+                self.running = False
+                return
 
-        # Motors 1-4 to 100%
-        if key == '1':
-            self.motor_power_changes[0] = 1
-        if key == '5':
-            self.motor_power_changes[0] = -1
-        if key == '2':
-            self.motor_power_changes[1] = 1
-        if key == '6':
-            self.motor_power_changes[1] = -1
-        if key == '3':
-            self.motor_power_changes[2] = 1
-        if key == '7':
-            self.motor_power_changes[2] = -1
-        if key == '4':
-            self.motor_power_changes[3] = 1
-        if key == '8':
-            self.motor_power_changes[3] = -1
+            # Forward mouse events to renderer for camera control
+            elif event.type in [pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION]:
+                self.env.renderer._handle_mouse_input(event)
 
-        # All motors off
-        elif key == '0':
-            self.motor_power_changes[:] = 0.0
-            print("All motors OFF")
+            elif event.type == pygame.KEYDOWN:
+                # Track pressed keys
+                key_name = pygame.key.name(event.key)
+                self.keys_pressed.add(key_name)
 
+                # Reset
+                if event.key == pygame.K_r:
+                    self.reset()
 
-        # Reset
-        elif key == 'R':  # Shift+R
-            self.reset()
+                # Exit
+                elif event.key == pygame.K_ESCAPE or event.key == pygame.K_x:
+                    print("\nExiting...")
+                    self.running = False
 
-        # Exit
-        elif key in ['x', 'X', 'escape']:
-            print("\nExiting...")
-            self.running = False
-            plt.close('all')
+            elif event.type == pygame.KEYUP:
+                # Track released keys
+                key_name = pygame.key.name(event.key)
+                self.keys_pressed.discard(key_name)
+
+        # Also handle camera keyboard input (WASD, arrows, space, shift) through renderer
+        self.env.renderer._handle_keyboard_input()
+
+    def update_motor_thrusts(self):
+        """Update motor thrusts based on currently pressed keys."""
+        # Calculate thrust change for this frame
+        thrust_delta = self.thrust_change_rate * self.dt
+
+        # Check which motors should change thrust
+        thrust_changes = np.zeros(4, dtype=np.float32)
+
+        # Keys 1-4: Increase thrust
+        if '1' in self.keys_pressed:
+            thrust_changes[0] = thrust_delta
+        if '2' in self.keys_pressed:
+            thrust_changes[1] = thrust_delta
+        if '3' in self.keys_pressed:
+            thrust_changes[2] = thrust_delta
+        if '4' in self.keys_pressed:
+            thrust_changes[3] = thrust_delta
+
+        # Keys 5-8: Decrease thrust
+        if '5' in self.keys_pressed:
+            thrust_changes[0] = -thrust_delta
+        if '6' in self.keys_pressed:
+            thrust_changes[1] = -thrust_delta
+        if '7' in self.keys_pressed:
+            thrust_changes[2] = -thrust_delta
+        if '8' in self.keys_pressed:
+            thrust_changes[3] = -thrust_delta
+
+        # Apply changes
+        self.motor_thrusts += thrust_changes
+
+        # Clamp thrusts to valid range [0, 1]
+        self.motor_thrusts = np.clip(self.motor_thrusts, 0.0, 1.0)
+
+        # If no keys are pressed for a motor, push it back toward hover thrust
+        hover_return_rate = 2.0  # Return to hover faster than manual control
+        for i in range(4):
+            key_increase = str(i + 1) in self.keys_pressed
+            key_decrease = str(i + 5) in self.keys_pressed
+
+            if not key_increase and not key_decrease:
+                # Push toward hover thrust
+                diff = self.hover_thrust - self.motor_thrusts[i]
+                self.motor_thrusts[i] += diff * hover_return_rate * self.dt
 
     def reset(self):
         """Reset the drone to initial state."""
         self.obs, self.info = self.env.reset()
-        self.motor_power_changes[:] = 0.0
+        self.motor_thrusts = np.array([self.hover_thrust] * 4, dtype=np.float32)
+        self.keys_pressed.clear()
         self.episode_count += 1
-        print(f"\n>>> RESET: Starting Episode {self.episode_count} <<<\n")
+        print(f"\n>>> RESET: Starting Episode {self.episode_count} <<<")
 
     def run(self):
         """Main control loop."""
-        # Connect keyboard event
-        if self.env.renderer.fig is not None:
-            self.env.renderer.fig.canvas.mpl_connect('key_press_event', self.on_key_press)
-
-        # Initial render to create figure
-        self.env.render()
-
-        # Connect after first render
-        if self.env.renderer.fig is not None:
-            self.env.renderer.fig.canvas.mpl_connect('key_press_event', self.on_key_press)
+        # Initial render to create pygame window
+        self.env.render(skip_event_handling=True)
 
         step = 0
         last_info_time = time.time()
@@ -163,14 +218,23 @@ class ManualDroneController:
             while self.running:
                 frame_start_time = time.time()
 
-                # Step simulation with current motor powers
-                self.obs, reward, terminated, truncated, self.info = self.env.step(self.motor_power_changes)
+                # Handle pygame events (must be called before updating motor thrusts)
+                self.handle_pygame_events()
 
-                # Check if episode ended (failed)
+                if not self.running:
+                    break
+
+                # Update motor thrusts based on key states
+                self.update_motor_thrusts()
+
+                # Step simulation with current motor thrusts
+                self.obs, reward, terminated, truncated, self.info = self.env.step(self.motor_thrusts)
+
+                # Check if episode ended
                 if terminated or truncated:
                     reason = "terminated" if terminated else "truncated"
                     print(f"\n{'='*60}")
-                    print(f"EPISODE {self.episode_count} FAILED ({reason.upper()})!")
+                    print(f"EPISODE {self.episode_count} ENDED ({reason.upper()})!")
                     print(f"  Total steps in episode: {step}")
                     print(f"  Total steps overall: {self.total_steps + step}")
                     if terminated:
@@ -188,8 +252,8 @@ class ManualDroneController:
                     self.reset()
                     continue
 
-                # Render visualization (environment has its own FPS control)
-                self.env.render()
+                # Render visualization (skip event handling since we do it ourselves)
+                self.env.render(skip_event_handling=True)
 
                 # Calculate how long to wait for correct FPS
                 frame_elapsed = time.time() - frame_start_time
@@ -217,15 +281,14 @@ class ManualDroneController:
                     angular_vel = np.rad2deg(self.env.drone.angular_velocity)
                     vel = self.env.drone.velocity
 
-                    print(self.obs)
-
                     print(f"\nStatus (Step {step}):")
                     print(f"  Position: [{pos[0]:6.2f}, {pos[1]:6.2f}, {pos[2]:6.2f}]")
                     print(f"  Roll:  {roll_deg:6.1f}°")
                     print(f"  Pitch: {pitch_deg:6.1f}°")
                     print(f"  Yaw:   {yaw_deg:6.1f}°")
-                    print(f"  Velocity: [{vel[0]:6.2f}, {vel[1]:6.2f}, {vel[2]:6.2f}]m/s")
-                    print(f"  Angular Velocity: [{angular_vel[0]:6.2f}, {angular_vel[1]:6.2f}, {angular_vel[2]:6.2f}]deg/s")
+                    print(f"  Velocity: [{vel[0]:6.2f}, {vel[1]:6.2f}, {vel[2]:6.2f}] m/s")
+                    print(f"  Angular Velocity: [{angular_vel[0]:6.2f}, {angular_vel[1]:6.2f}, {angular_vel[2]:6.2f}] deg/s")
+                    print(f"  Motor Thrusts: [{self.motor_thrusts[0]:.2f}, {self.motor_thrusts[1]:.2f}, {self.motor_thrusts[2]:.2f}, {self.motor_thrusts[3]:.2f}]")
                     print(f"  FPS: {self.actual_fps:.1f} / {self.target_fps:.0f} (target)")
 
                     last_info_time = current_time

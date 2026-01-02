@@ -412,11 +412,14 @@ class DroneEnv(gym.Env[np.ndarray, np.ndarray]):
             "distance_progress": distance_progress,
         }
 
-    def render(self):
+    def render(self, skip_event_handling=False):
         """
         Renders the environment visualization.
 
         Displays 2D views (top-down XY and front XZ) similar to technical drawings.
+
+        Args:
+            skip_event_handling: If True, skip pygame event handling (for external control)
 
         Returns:
             RGB array if render_mode is "rgb_array", None otherwise.
@@ -425,7 +428,7 @@ class DroneEnv(gym.Env[np.ndarray, np.ndarray]):
             return None
 
         # Delegate to renderer
-        return self.renderer.render(self, Reward=f"{self._compute_reward():.2f}")
+        return self.renderer.render(self, skip_event_handling=skip_event_handling, Reward=f"{self._compute_reward():.2f}")
 
     def close(self):
         """Closes the environment and cleans up resources."""
