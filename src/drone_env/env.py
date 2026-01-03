@@ -6,8 +6,7 @@ import numpy as np
 from gymnasium import spaces, Space
 
 from .drone import Drone
-from .renderer import DroneEnvRenderer
-from .renderer_pygame import PyGameRenderer
+from .renderer import Renderer
 from .wind import Wind
 
 
@@ -37,7 +36,6 @@ class DroneEnv(gym.Env[np.ndarray, np.ndarray]):
             wind_strength_range: Tuple[float, float] = (0.0, 5.0),  # m/s
             use_wind: bool = True,
             render_mode: Optional[str] = None,
-            renderer_type: str = "pygame",  # "pygame" or "matplotlib"
             # Crash detection parameters
             enable_crash_detection: bool = True,
             enable_out_of_bounds_detection: bool = True,
@@ -61,9 +59,6 @@ class DroneEnv(gym.Env[np.ndarray, np.ndarray]):
                 - None: No rendering (fastest)
                 - "human": Interactive matplotlib visualization
                 - "rgb_array": Returns RGB arrays for video recording
-            renderer_type: Type of renderer to use. Options are:
-                - "pygame": Fast pygame-based 3D renderer (default, recommended)
-                - "matplotlib": Slower matplotlib-based 2D multi-view renderer
             enable_crash_detection: Whether to detect and terminate on crashes.
                 If True, episode ends when crash is detected. Default is True.
             enable_out_of_bounds_detection: Whether to detect and terminate on large distances to the target position
@@ -179,13 +174,7 @@ class DroneEnv(gym.Env[np.ndarray, np.ndarray]):
         self.step_count = 0
         self.initial_distance = 0
 
-        # Rendering - choose renderer based on renderer_type
-        if renderer_type == "pygame":
-            self.renderer = PyGameRenderer(render_mode=render_mode, space_side_length=self.space_side_length)
-        elif renderer_type == "matplotlib":
-            self.renderer = DroneEnvRenderer(render_mode=render_mode, space_side_length=self.space_side_length)
-        else:
-            raise ValueError(f"Invalid renderer_type: {renderer_type}. Options are 'pygame' or 'matplotlib'.")
+        self.renderer = Renderer(render_mode=render_mode, space_side_length=self.space_side_length)
 
     def reset(
             self,
@@ -450,7 +439,7 @@ class SequentialWaypointEnv(DroneEnv):
     def __init__(
             self,
             max_num_waypoints: int = 15,
-            waypoint_reach_threshold_m: float = 0.4,
+            waypoint_reach_threshold_m: float = 0.1,
             checkpoint_bonus: float = 10.0,
             bonus_decay_rate_per_sec: float = 2.0,
             **kwargs
@@ -548,11 +537,14 @@ class SequentialWaypointEnv(DroneEnv):
         """
         distance = np.linalg.norm(self.target_position - self.drone.position)
         if distance < self.waypoint_reach_threshold_m:
-            reward = max(self.checkpoint_bonus - self.bonus_decay_rate_per_sec * self.time_since_last_checkpoint, 0.0)
+            reward = max(self.checkpoint_bonus - self.bonus_decay_rate_per_sec * self.time_since_last_checkpoint, 1.0)
         else:
             direction_target = (self.target_position - self.drone.position) / (distance + 1e-6)
             correct_vel = np.dot(self.drone.velocity, direction_target)
             reward = np.tanh(correct_vel / self.vel_scale)
+
+        if reward > 0:
+            reward += np.mean(self.drone.motor_thrusts) * 0.5
 
         return reward
 
