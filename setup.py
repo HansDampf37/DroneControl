@@ -14,7 +14,7 @@ setup(
     description="Gymnasium Environment for Quadcopter Control with Reinforcement Learning",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/drone-control",
+    url="https://github.com/HansDampf37/DroneControl",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     classifiers=[
