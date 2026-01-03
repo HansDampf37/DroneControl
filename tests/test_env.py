@@ -120,13 +120,13 @@ def test_wind():
         use_wind=True,
         render_mode=None
     )
-    obs, info = env.reset(seed=456)
+    env.reset(seed=456)
 
     wind_vectors = []
 
     for i in range(200):
         action = np.array([0.25] * 4)  # Hover
-        obs, reward, terminated, truncated, info = env.step(action)
+        env.step(action)
         wind_vectors.append(env.wind.get_vector().copy())
 
     wind_vectors = np.array(wind_vectors)
@@ -188,52 +188,6 @@ def test_reward():
     print(f"\n✓ Test 4 passed!\n")
 
 
-def demo_with_visualization():
-    """Demo with visualization.
-
-    Demonstrates the environment with real-time rendering to visually
-    verify the drone's behavior and the rendering system.
-    """
-    print("=" * 60)
-    print("Demo: Visualization")
-    print("=" * 60)
-    print("Starting environment with rendering...")
-    print("(Close window to exit)")
-
-    env = DroneEnv(
-        max_steps=500,
-        render_mode="human"
-    )
-
-    obs, info = env.reset(seed=42)
-
-    done = False
-    step = 0
-
-    try:
-        while not done and step < 500:
-            # Simple policy: Hover + small random variation
-            action = np.array([0.25, 0.25, 0.25, 0.25]) + np.random.uniform(-0.05, 0.05, 4)
-            action = np.clip(action, 0, 1)
-
-            obs, reward, terminated, truncated, info = env.step(action)
-            done = terminated or truncated
-
-            env.render()
-            step += 1
-
-            if step % 100 == 0:
-                print(f"Step {step}: Distance={info['distance_to_target']:.2f}m, Reward={reward:.4f}")
-
-    except KeyboardInterrupt:
-        print("\nDemo interrupted.")
-
-    finally:
-        env.close()
-
-    print(f"\n✓ Demo completed!\n")
-
-
 if __name__ == "__main__":
     # Run all tests
     test_basic_functionality()
@@ -241,16 +195,6 @@ if __name__ == "__main__":
     test_wind()
     test_reward()
 
-    # Optional: Demo with visualization
-    # Uncomment the following line to see the environment in action:
-    # demo_with_visualization()
-    print("\nDo you want to start the demo with visualization?")
-    print("(Press Enter to proceed or Ctrl+C to skip)")
-    try:
-        input()
-        demo_with_visualization()
-    except KeyboardInterrupt:
-        print("\nDemo skipped.")
 
     print("\n" + "=" * 60)
     print("All tests completed successfully! 🚁")

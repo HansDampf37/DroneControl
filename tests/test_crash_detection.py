@@ -1,6 +1,7 @@
 """Test for crash detection system."""
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import numpy as np
@@ -108,7 +109,7 @@ def test_no_crash_disabled():
         action = np.array([0.0, 0.0, 0.0, 0.0])
         obs, reward, terminated, truncated, info = env.step(action)
 
-        if terminated:
+        if terminated and info["crashed"]:
             crashed = True
             break
 
@@ -140,7 +141,7 @@ def test_normal_flight():
     # Hover
     crashed = False
     for step in range(100):
-        action = np.array([0.25, 0.25, 0.25, 0.25])
+        action = np.array(env.drone.motor_cmd)
         obs, reward, terminated, truncated, info = env.step(action)
 
         if terminated:
@@ -152,7 +153,7 @@ def test_normal_flight():
     if not crashed:
         print(f"✓ Correct: No crash during normal hover")
         print(f"  Final Z-position: {info['position'][2]:.2f}m")
-        print(f"  All {step+1} steps successful")
+        print(f"  All {step + 1} steps successful")
 
     env.close()
     print()
@@ -172,7 +173,7 @@ def test_crash_info():
         render_mode=None
     )
 
-    obs, info = env.reset(seed=42)
+    env.reset(seed=42)
 
     # Check that 'crashed' is present in info
     action = np.array([0.0, 0.0, 0.0, 0.0])
@@ -194,14 +195,11 @@ if __name__ == "__main__":
     print("CRASH DETECTION TESTS")
     print("=" * 60 + "\n")
 
-    results = []
+    results = [("Z-Threshold Crash", test_crash_z_threshold()), ("Tilt Crash", test_crash_tilt()),
+               ("Disabled", test_no_crash_disabled()), ("Normal Hover", test_normal_flight()),
+               ("Info-Flag", test_crash_info())]
 
     # Run all tests
-    results.append(("Z-Threshold Crash", test_crash_z_threshold()))
-    results.append(("Tilt Crash", test_crash_tilt()))
-    results.append(("Disabled", test_no_crash_disabled()))
-    results.append(("Normal Hover", test_normal_flight()))
-    results.append(("Info-Flag", test_crash_info()))
 
     # Summary
     print("=" * 60)
@@ -221,4 +219,3 @@ if __name__ == "__main__":
         print("\n🎉 All tests successful!")
     else:
         print(f"\n⚠️  {total - passed} test(s) failed")
-

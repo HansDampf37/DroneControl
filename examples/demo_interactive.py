@@ -45,7 +45,6 @@ class InteractiveDroneDemo:
         self.env = DroneEnv(
             max_steps=10000,
             render_mode="human",
-            renderer_type="pygame",
             enable_crash_detection=(mode == 'manual'),
             dt=dt,
             use_wind=use_wind,
@@ -146,6 +145,12 @@ class InteractiveDroneDemo:
 
     def handle_events(self):
         """Handle pygame events."""
+        # Check if pygame display is still initialized
+        if not pygame.get_init() or not pygame.display.get_surface():
+            print("\n👋 Display closed, exiting...")
+            self.running = False
+            return
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 print("\n👋 Exiting...")
