@@ -1,0 +1,14 @@
+# Include important files in source distribution
+include README.md
+include LICENSE
+include requirements.txt
+
+# Include all Python files in src
+recursive-include src *.py
+
+# Exclude cache and build files
+global-exclude __pycache__
+global-exclude *.py[cod]
+global-exclude *$py.class
+global-exclude *.so
+

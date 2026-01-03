@@ -8,7 +8,7 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
     requirements = [line.strip() for line in fh if line.strip() and not line.startswith("#")]
 
 setup(
-    name="drone-env",
+    name="drone-rl-env",
     version="0.1.0",
     author="Adrian Degenkolb",
     description="Gymnasium Environment for Quadcopter Control with Reinforcement Learning",

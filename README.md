@@ -1,5 +1,9 @@
 # Drone Control with Reinforcement Learning
 
+[![PyPI version](https://badge.fury.io/py/drone-rl-env.svg)](https://badge.fury.io/py/drone-rl-env)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 This repository implements two Gymnasium environments for training reinforcement learning agents to control a quadcopter drone with realistic physics simulation.
 
 ## Environments
@@ -339,8 +343,30 @@ See `examples/training.py` for complete training script with RLlib integration.
 
 ## Installation
 
+### From PyPI (Recommended)
+
 ```bash
-pip install -r requirements.txt
+pip install drone-rl-env
+```
+
+### From Source
+
+```bash
+git clone https://github.com/HansDampf37/DroneControl.git
+cd DroneControl
+pip install -e .
+```
+
+### With Optional Dependencies
+
+For RL training with Ray RLlib:
+```bash
+pip install drone-rl-env[rl]
+```
+
+For development:
+```bash
+pip install drone-rl-env[dev]
 ```
 
 **Main dependencies:**
