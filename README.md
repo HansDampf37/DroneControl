@@ -6,10 +6,7 @@
 
 This repository implements two Gymnasium environments for training reinforcement learning agents to control a quadcopter drone with realistic physics simulation.
 
-<video width="320" height="240" controls poster="docs/image.png">
-  <source src="docs/example_agent.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
+[![Watch demo](docs/image.png)](https://vimeo.com/1178220789?share=copy&fl=sv&fe=ci)
 
 ## Environments
 ### 1. DroneEnv
