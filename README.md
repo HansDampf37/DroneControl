@@ -43,7 +43,8 @@ A sequential waypoint navigation environment where the drone must navigate throu
 - Angular acceleration: `[-100, 100]` rad/s² per component
 - Wind: `[0, 5]` m/s by default (configurable)
 
-To customize the observation space, you can inherit from the environment and override the `_get_observation()` method.
+⚠️ To customize the observation space, you can inherit from the environment and override the `_get_observation()` method.
+
 ---
 
 ### Action Space
@@ -71,7 +72,8 @@ Interprets actions as **motion primitives** (hover, roll, pitch, yaw).
   motor[2] = hover - roll + pitch - yaw   (rear-left)
   motor[3] = hover + roll - pitch - yaw   (rear-right)
   ```
-To implement a custom action space you can either wrap the environment into a custom wrapper, inherit from the environment and override the `__preprocess_action()` method.
+⚠️  To implement a custom action space you can either wrap the environment into a custom wrapper, inherit from the environment and override the `__preprocess_action()` method.
+
 ---
 
 ### Reward Function
@@ -150,6 +152,8 @@ def _compute_reward(self) -> float:
 - `checkpoint_bonus = 10.0` (base reward for reaching waypoint)
 - `bonus_decay_rate_per_sec = 2.0` (penalty for slow navigation)
 - `waypoint_reach_threshold_m = 0.1` m (distance to consider waypoint reached)
+
+⚠️  To implement a custom reward function, you can inherit from the environment and override the `_compute_reward()` method.
 
 ---
 
