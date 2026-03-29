@@ -43,8 +43,8 @@ Repository = "https://github.com/HansDampf37/DroneControl"
 "Bug Tracker" = "https://github.com/HansDampf37/DroneControl/issues"
 
 [tool.setuptools]
-packages = {find = {where = ["src"]}}
-package-dir = {"" = "src"}
+packages = {find = {where = ["drone_env", "examples"]}}
+package-dir = {"" = "drone_env"}
 
 [tool.setuptools.dynamic]
 version = {attr = "drone_env.__version__"}

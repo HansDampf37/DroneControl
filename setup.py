@@ -9,14 +9,14 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
 
 setup(
     name="drone-rl-env",
-    version="0.1.0",
+    version="1.0.0",
     author="Adrian Degenkolb",
     description="Gymnasium Environment for Quadcopter Control with Reinforcement Learning",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/HansDampf37/DroneControl",
-    packages=find_packages(where="src"),
-    package_dir={"": "src"},
+    packages=find_packages(where="."),
+    package_dir={"": "."},
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Science/Research",
