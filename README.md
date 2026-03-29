@@ -6,7 +6,7 @@
 
 This repository implements two Gymnasium environments for training reinforcement learning agents to control a quadcopter drone with realistic physics simulation.
 
-[![Watch demo](docs/image.png)](https://vimeo.com/1178220789?share=copy&fl=sv&fe=ci)
+[![Watch demo](https://github.com/HansDampf37/DroneControl/blob/main/docs/image.png)](https://vimeo.com/1178220789?share=copy&fl=sv&fe=ci)
 
 ## Environments
 ### 1. DroneEnv
