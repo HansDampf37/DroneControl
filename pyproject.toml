@@ -12,7 +12,7 @@ license = {text = "MIT"}
 authors = [
     {name = "Adrian Degenkolb"},
 ]
-keywords = ["reinforcement-learning", "drone", "quadcopter", "gymnasium", "environment", "control"]
+keywords = ["reinforcement-learning", "drone", "quadcopter", "gymnasium"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",

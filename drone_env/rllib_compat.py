@@ -1,6 +1,6 @@
 import gymnasium
 
-from src.drone_env import DroneEnv, SequentialWaypointEnv
+from drone_env import DroneEnv, SequentialWaypointEnv
 
 
 class RLlibDroneEnv(gymnasium.Wrapper):

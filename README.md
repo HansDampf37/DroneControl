@@ -6,8 +6,11 @@
 
 This repository implements two Gymnasium environments for training reinforcement learning agents to control a quadcopter drone with realistic physics simulation.
 
-## Environments
+<video width="320" height="240" controls>
+  <source src="docs/example_agent.mp4" type="video/mp4">
+</video>
 
+## Environments
 ### 1. DroneEnv
 A single-target navigation environment where the drone must fly to and maintain position at a target point.
 
@@ -15,10 +18,7 @@ A single-target navigation environment where the drone must fly to and maintain 
 A sequential waypoint navigation environment where the drone must navigate through a series of waypoints as quickly as possible.
 
 ---
-
-## MDP Interface Specification
-
-### Observation Space
+## Observation Space
 
 **DroneEnv observation space (33 dimensions):**
 - **[0:3]** - Relative position to target `(x, y, z)` in meters
@@ -45,6 +45,7 @@ A sequential waypoint navigation environment where the drone must navigate throu
 - Angular acceleration: `[-100, 100]` rad/s² per component
 - Wind: `[0, 5]` m/s by default (configurable)
 
+To customize the observation space, you can inherit from the environment and override the `_get_observation()` method.
 ---
 
 ### Action Space
@@ -61,7 +62,6 @@ Interprets actions as **thrust changes** rather than absolute thrust values.
 - **Input:** `[-1.0, 1.0]` per motor (thrust change rate)
 - **Output:** Absolute thrust computed as: `thrust = previous_thrust + dt * action`
 - **Effect:** Can increase motor command from 0% to 100% in 1 second
-- **Benefits:** Smoother control, easier for the agent to learn incremental adjustments
 
 #### 2. MotionPrimitiveActionWrapper
 Interprets actions as **motion primitives** (hover, roll, pitch, yaw).
@@ -73,8 +73,7 @@ Interprets actions as **motion primitives** (hover, roll, pitch, yaw).
   motor[2] = hover - roll + pitch - yaw   (rear-left)
   motor[3] = hover + roll - pitch - yaw   (rear-right)
   ```
-- **Benefits:** More intuitive control space aligned with typical drone control paradigms
-
+To implement a custom action space you can either wrap the environment into a custom wrapper, inherit from the environment and override the `__preprocess_action()` method.
 ---
 
 ### Reward Function
@@ -84,14 +83,30 @@ Interprets actions as **motion primitives** (hover, roll, pitch, yaw).
 The reward function combines position-based and velocity-based components:
 
 ```python
-distance = ||target_position - drone_position||
-direction_to_target = (target_position - drone_position) / (distance + ε)
-velocity_toward_target = dot(drone_velocity, direction_to_target)
+import numpy as np
+def _compute_reward(self) -> float:
+    """
+    Computes the dense reward based on distance to target and the velocity towards the target.
 
-r_position = exp(-distance)
-r_velocity = tanh(velocity_toward_target / velocity_scale)
+    The reward is calculated as: r_pos + alpha * (1 - r_pos) r_vel with
+    r_pos = exp(-distance)
+    r_vel = tanh(dot(drone_vel , direction_to_target)/beta)
+    This formulation provides:
+    - Reward of 1.0 when exactly at target (distance = 0)
+    - Reward approaching 0.0 when distance grows
+    - Stronger gradient near the target for better learning
+    - general incentive to move towards target because of velocity term
 
-reward = r_position + 0.5 * (1 - r_position) * r_velocity
+    Returns:
+        Reward value in range [-1.0, 1.0].
+    """
+    distance = np.linalg.norm(self.target_position - self.drone.position)
+    direction_target = (self.target_position - self.drone.position) / (distance + 1e-6)
+    correct_vel = np.dot(self.drone.velocity, direction_target)
+    reward_position = np.exp(-1.0 * distance)
+    reward_vel = np.tanh(correct_vel / self.vel_scale)
+    reward = reward_position + 0.5 * (1.0 - reward_position) * reward_vel
+    return reward
 ```
 
 **Characteristics:**
@@ -104,25 +119,33 @@ reward = r_position + 0.5 * (1 - r_position) * r_velocity
 **Parameters:**
 - `velocity_scale = 3.0` m/s (controls velocity reward sensitivity)
 
+If you want to implement a custom reward function, you can inherit from the environment and override the `_compute_reward()` method.
+
 #### SequentialWaypointEnv Reward
 
 The reward function adapts based on proximity to the current waypoint:
 
-**When close to waypoint** (`distance < waypoint_reach_threshold_m`):
 ```python
-reward = max(checkpoint_bonus - bonus_decay_rate * time_since_last_checkpoint, 1.0)
-```
+import numpy as np
 
-**When far from waypoint:**
-```python
-direction_to_target = (target_position - drone_position) / (distance + ε)
-velocity_toward_target = dot(drone_velocity, direction_to_target)
-reward = tanh(velocity_toward_target / velocity_scale)
-```
+def _compute_reward(self) -> float:
+    """
+    Computes reward based on:
+    1. Speed in the right direction (velocity alignment)
+    2. Decaying checkpoint bonus for reaching waypoints
+    """
+    distance = np.linalg.norm(self.target_position - self.drone.position)
+    if distance < self.waypoint_reach_threshold_m:
+        reward = max(self.checkpoint_bonus - self.bonus_decay_rate_per_sec * self.time_since_last_checkpoint, 1.0)
+    else:
+        direction_target = (self.target_position - self.drone.position) / (distance + 1e-6)
+        correct_vel = np.dot(self.drone.velocity, direction_target)
+        reward = np.tanh(correct_vel / self.vel_scale)
 
-**Aggressive flying bonus** (when reward > 0):
-```python
-reward += mean(motor_thrusts) * 0.5  # Encourages aggressive flying
+    if reward > 0:
+        reward += np.mean(self.drone.motor_thrusts) * 0.5
+
+    return reward
 ```
 
 **Parameters:**
@@ -166,10 +189,11 @@ The `info` dictionary returned by `step()` and `reset()` contains:
 
 #### DroneEnv Info
 ```python
+from numpy.typing import NDArray
 {
     'distance_to_target': float,      # Euclidean distance to target (m)
-    'position': np.ndarray,            # Drone position [x, y, z] (m)
-    'target_position': np.ndarray,     # Target position [x, y, z] (m)
+    'position': NDArray,            # Drone position [x, y, z] (m)
+    'target_position': NDArray,     # Target position [x, y, z] (m)
     'step_count': int,                 # Current step number
     'episode_time': float,             # Elapsed time in seconds (step_count * dt)
     'distance_progress': float,        # initial_distance - current_distance (m)
@@ -180,11 +204,12 @@ The `info` dictionary returned by `step()` and `reset()` contains:
 
 #### SequentialWaypointEnv Additional Info
 ```python
+from numpy.typing import NDArray
 {
     # ... all DroneEnv info fields, plus:
     'waypoints_reached': int,          # Number of waypoints reached so far
-    'current_waypoint_pos': np.ndarray, # Current target waypoint [x, y, z] (m)
-    'next_waypoint_pos': np.ndarray,   # Next waypoint after current [x, y, z] (m)
+    'current_waypoint_pos': NDArray, # Current target waypoint [x, y, z] (m)
+    'next_waypoint_pos': NDArray,   # Next waypoint after current [x, y, z] (m)
     'steps_since_checkpoint': float,   # Time since last waypoint reached (seconds)
 }
 ```
@@ -198,8 +223,7 @@ The environment supports three rendering modes:
 #### Render Modes
 
 1. **`None` (default)**
-   - No rendering (fastest, for training)
-   - `render()` returns `None`
+   - No rendering
 
 2. **`"human"`**
    - Interactive 3D visualization using Pygame
@@ -232,7 +256,7 @@ The 3D renderer displays:
 #### Usage Example
 
 ```python
-from src.drone_env import DroneEnv
+from drone_env import DroneEnv
 
 # Create environment with rendering
 env = DroneEnv(render_mode="human")
@@ -242,7 +266,7 @@ for _ in range(1000):
     action = env.action_space.sample()  # Random action
     obs, reward, terminated, truncated, info = env.step(action)
     env.render()  # Display the current state
-    
+
     if terminated or truncated:
         break
 
@@ -256,28 +280,32 @@ env.close()
 ### DroneEnv Configuration
 
 ```python
+from drone_env import DroneEnv
+
 DroneEnv(
-    max_steps=1000,                          # Episode length limit
-    dt=0.01,                                 # Simulation timestep (seconds)
-    target_change_interval=None,             # Steps between target position changes
-    wind_strength_range=(0.0, 5.0),          # Min/max wind speed (m/s)
-    use_wind=True,                           # Enable wind simulation
-    render_mode=None,                        # None, "human", or "rgb_array"
-    enable_crash_detection=True,             # Enable crash termination
-    enable_out_of_bounds_detection=True,     # Enable boundary termination
-    crash_z_vel_threshold=-20.0,             # Crash velocity threshold (m/s)
-    crash_tilt_threshold=80.0,               # Crash tilt threshold (degrees)
+    max_steps=1000,  # Episode length limit
+    dt=0.01,  # Sampling frequency (seconds)
+    target_change_interval=None,  # Steps between target position changes
+    wind_strength_range=(0.0, 5.0),  # Min/max wind speed (m/s)
+    use_wind=True,  # Enable wind simulation
+    render_mode=None,  # None, "human", or "rgb_array"
+    enable_crash_detection=True,  # Enable crash termination
+    enable_out_of_bounds_detection=True,  # Enable boundary termination
+    crash_z_vel_threshold=-20.0,  # Crash velocity threshold (m/s)
+    crash_tilt_threshold=80.0,  # Crash tilt threshold (degrees)
 )
 ```
 
 ### SequentialWaypointEnv Configuration
 
 ```python
+from drone_env import SequentialWaypointEnv
+
 SequentialWaypointEnv(
-    max_num_waypoints=15,                    # Number of waypoints per episode
-    waypoint_reach_threshold_m=0.1,          # Distance to reach waypoint (m)
-    checkpoint_bonus=10.0,                   # Reward for reaching waypoint
-    bonus_decay_rate_per_sec=2.0,            # Bonus decay rate
+    max_num_waypoints=15,  # Number of waypoints per episode
+    waypoint_reach_threshold_m=0.1,  # Distance to reach waypoint (m)
+    checkpoint_bonus=10.0,  # Reward for reaching waypoint
+    bonus_decay_rate_per_sec=2.0,  # Bonus decay rate
     # ... plus all DroneEnv parameters
 )
 ```
@@ -300,19 +328,21 @@ The environment implements realistic quadcopter physics:
 - **Angular damping:** Torque opposing rotation
 - **Wind simulation:** Ornstein-Uhlenbeck process for realistic turbulence
 
+To change the physics we recommend inheriting from the Drone class and overriding the `update()` method. Also, inherit 
+from the env and override the `__init__` method to use your custom drone class.
 ---
 
 ## Training Example
 
 ```python
-from src.drone_env import RLlibDroneEnv, ThrustChangeController, SequentialWaypointEnv
+from drone_env import RLlibDroneEnv, ThrustChangeController, SequentialWaypointEnv
 from ray.rllib.algorithms.ppo import PPOConfig
 
 # Environment configuration
 env_config = {
     "env_class": SequentialWaypointEnv,
     "max_steps": 600,
-    "dt": 1.0/20,  # 20 Hz simulation
+    "dt": 1.0 / 20,  # 20 Hz simulation
     "use_wind": True,
     "wrappers": [ThrustChangeController],
 }

@@ -187,14 +187,14 @@ class DroneEnv(gym.Env[np.ndarray, np.ndarray]):
         Args:
             seed: Random seed for reproducibility. If provided, the environment's
                 random number generator is seeded. Default is None.
-            options: Additional reset options (currently unused). Default is None.
+            options: Additional reset options. Default is None.
 
         Returns:
             Tuple of (observation, info) where:
             - observation: Initial observation array
             - info: Dictionary with additional information (distance, positions, etc.)
         """
-        super().reset(seed=seed)
+        super().reset(seed=seed, options=options)
 
         # Reset drone - start at center of elevated space
         initial_orientation = np.random.uniform(-0.1, 0.1, 3).astype(np.float32)
@@ -231,7 +231,7 @@ class DroneEnv(gym.Env[np.ndarray, np.ndarray]):
             - truncated: True if episode ended due to max_steps reached
             - info: Dictionary with additional information including 'crashed' flag
         """
-        action = np.clip(action, 0.0, 1.0)
+        action = self.preprocess_action(action)
 
         # Wind update
         self.wind.update(self.dt)
@@ -295,6 +295,9 @@ class DroneEnv(gym.Env[np.ndarray, np.ndarray]):
             # Check if target is far enough from space center (drone starting position)
             if np.linalg.norm(target - space_center) >= min_distance:
                 return target
+
+    def preprocess_action(self, action: np.ndarray):
+        return np.clip(action, 0.0, 1.0)
 
     def _get_observation(self) -> np.ndarray:
         """

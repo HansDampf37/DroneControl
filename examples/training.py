@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import argparse
 import numpy as np
 import os
-from src.drone_env import RLlibDroneEnv, ThrustChangeController, SequentialWaypointEnv
+from drone_env import RLlibDroneEnv, ThrustChangeController, SequentialWaypointEnv
 from ray.rllib.algorithms.callbacks import DefaultCallbacks
 from ray.rllib.algorithms.ppo import PPOConfig
 from ray.rllib.algorithms.sac import SACConfig
@@ -110,7 +110,7 @@ def train_with_rllib(algorithm='PPO', total_timesteps=100000, save_path='../mode
                 use_critic=True,
                 use_gae=True,
             )
-            .env_runners(num_env_runners=15, num_envs_per_env_runner=1)
+            .env_runners(num_env_runners=8, num_envs_per_env_runner=2)
             .resources(num_gpus=0)
             .evaluation(
                 evaluation_interval=10,
@@ -355,7 +355,7 @@ def evaluate_model(model_path, episodes=5, render=True, algorithm='PPO'):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Drone RL Training with Ray RLlib')
-    parser.add_argument('--mode', type=str, default='train', choices=['train', 'eval'],
+    parser.add_argument('--mode', type=str, default='eval', choices=['train', 'eval'],
                         help='Mode: train or eval')
     parser.add_argument('--algorithm', type=str, default='PPO', choices=['PPO', 'SAC', 'APPO'],
                         help='RL algorithm')

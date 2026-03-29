@@ -20,7 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import numpy as np
-from src.drone_env import DroneEnv
+from drone_env import DroneEnv
 import pygame
 import time
 import argparse
@@ -361,6 +361,7 @@ Examples:
     parser.add_argument(
         '--wind',
         action='store_true',
+        default=True,
         help='Enable wind simulation'
     )
 

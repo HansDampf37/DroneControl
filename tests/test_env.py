@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import numpy as np
-from src.drone_env import DroneEnv
+from drone_env import DroneEnv
 
 
 def test_basic_functionality():
